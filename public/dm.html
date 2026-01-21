@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arcane Cells - DM</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-role="dm" class="dm">
+    <div class="page">
+      <header class="site-header dm-header">
+        <div class="title-group">
+          <p class="title-eyebrow">Dungeon Master Console</p>
+          <h1>Arcane Cells</h1>
+          <p class="subtitle">Guide the warding stones and watch for hidden traps.</p>
+        </div>
+        <div class="status" id="status">Connecting...</div>
+      </header>
+
+      <section class="dm-panel">
+        <div class="panel-row">
+          <label for="game-select">Game</label>
+          <select id="game-select">
+            <option value="arcane-cells">Arcane Cells</option>
+          </select>
+        </div>
+        <div class="panel-row">
+          <label for="trap-count">Trap cards</label>
+          <input id="trap-count" type="number" min="0" max="52" value="10" />
+          <button id="start-game">Start new game</button>
+        </div>
+        <div id="trap-alert" class="trap-alert hidden">
+          <div class="trap-alert-message" id="trap-message"></div>
+          <button id="trap-confirm">Confirm trap</button>
+        </div>
+      </section>
+
+      <main id="board" class="board">
+        <section class="top-row">
+          <div class="zone">
+            <h2 class="zone-title">Free Cells</h2>
+            <div id="free-cells" class="free-cells"></div>
+          </div>
+          <div class="zone">
+            <h2 class="zone-title">Foundations</h2>
+            <div id="foundations" class="foundations"></div>
+          </div>
+        </section>
+
+        <section class="tableau-wrap">
+          <h2 class="zone-title">Tableau</h2>
+          <div id="tableau" class="tableau"></div>
+        </section>
+      </main>
+
+      <footer class="instructions" id="message-bar">
+        You see trap sigils and numbers. Players see only the rune hints.
+      </footer>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>

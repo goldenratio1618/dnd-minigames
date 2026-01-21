@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Arcane Cells</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-role="player">
+    <div class="page">
+      <header class="site-header">
+        <div class="title-group">
+          <p class="title-eyebrow">Cavern Puzzles</p>
+          <h1>Arcane Cells</h1>
+          <p class="subtitle">Arrange the sigils to calm the warding stones.</p>
+        </div>
+        <div class="status" id="status">Connecting...</div>
+      </header>
+
+      <main id="board" class="board">
+        <section class="top-row">
+          <div class="zone">
+            <h2 class="zone-title">Free Cells</h2>
+            <div id="free-cells" class="free-cells"></div>
+          </div>
+          <div class="zone">
+            <h2 class="zone-title">Foundations</h2>
+            <div id="foundations" class="foundations"></div>
+          </div>
+        </section>
+
+        <section class="tableau-wrap">
+          <h2 class="zone-title">Tableau</h2>
+          <div id="tableau" class="tableau"></div>
+        </section>
+      </main>
+
+      <footer class="instructions" id="message-bar">
+        Click a card or stack, then click a destination. Name a free cell before placing a card there.
+      </footer>
+    </div>
+
+    <div id="trap-overlay" class="trap-overlay hidden">
+      <div class="trap-burst"></div>
+      <div class="trap-message">Trap unleashed! Await the DM's word.</div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
