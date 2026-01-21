@@ -6,6 +6,7 @@ const COLOR_GROUP = {
   blue: "dark",
   black: "dark",
 };
+const ILLEGAL_MOVE_MESSAGE = "That block can't be moved there.";
 
 function createDeck() {
   const deck = [];
@@ -227,55 +228,55 @@ function canPlaceOnFoundation(card, pileIds, cardsById) {
 
 function applyMove(state, move) {
   if (!move || !move.from || !move.to) {
-    return { ok: false, error: "Move is missing source or destination." };
+    return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
   }
 
   const from = move.from;
   const to = move.to;
 
   if (from.type === "foundation") {
-    return { ok: false, error: "Cards cannot be moved out of the foundation." };
+    return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
   }
 
   let stack = [];
   if (from.type === "tableau") {
     if (!Number.isInteger(from.index) || from.index < 0 || from.index >= state.tableau.length) {
-      return { ok: false, error: "Invalid tableau column." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     if (!move.cardId) {
-      return { ok: false, error: "Select a card to move." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     const column = state.tableau[from.index];
     if (!column.includes(move.cardId)) {
-      return { ok: false, error: "That card is not in the selected column." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     if (column[column.length - 1] !== move.cardId) {
-      return { ok: false, error: "Only the top card can be moved." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     stack = [move.cardId];
   } else if (from.type === "freeCell") {
     if (!Number.isInteger(from.index) || from.index < 0 || from.index >= state.freeCells.length) {
-      return { ok: false, error: "Invalid free cell." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     const cell = state.freeCells[from.index];
     if (!cell.cardId) {
-      return { ok: false, error: "That free cell is empty." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     stack = [cell.cardId];
   } else {
-    return { ok: false, error: "Invalid source pile." };
+    return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
   }
 
   if (stack.length === 0) {
-    return { ok: false, error: "No cards selected." };
+    return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
   }
 
   if (to.type === "tableau") {
     if (!Number.isInteger(to.index) || to.index < 0 || to.index >= state.tableau.length) {
-      return { ok: false, error: "Invalid tableau column." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     if (from.type === "tableau" && from.index === to.index) {
-      return { ok: false, error: "Select a different column." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
 
     const destination = state.tableau[to.index];
@@ -283,7 +284,7 @@ function applyMove(state, move) {
       const destCard = state.cardsById[destination[destination.length - 1]];
       const movingCard = state.cardsById[stack[0]];
       if (!canPlaceOnTableau(movingCard, destCard)) {
-        return { ok: false, error: "That column cannot accept the selected card." };
+        return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
       }
     }
 
@@ -300,19 +301,19 @@ function applyMove(state, move) {
 
   if (to.type === "foundation") {
     if (stack.length !== 1) {
-      return { ok: false, error: "Only single cards can move to the foundation." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     if (!Number.isInteger(to.index) || to.index < 0 || to.index >= FOUNDATION_COLORS.length) {
-      return { ok: false, error: "Invalid foundation pile." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     const color = FOUNDATION_COLORS[to.index];
     const card = state.cardsById[stack[0]];
     if (card.color !== color) {
-      return { ok: false, error: "That foundation is for a different color." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     const pile = state.foundations[color];
     if (!canPlaceOnFoundation(card, pile, state.cardsById)) {
-      return { ok: false, error: "That card does not fit on the foundation." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
 
     if (from.type === "tableau") {
@@ -328,20 +329,20 @@ function applyMove(state, move) {
 
   if (to.type === "freeCell") {
     if (stack.length !== 1) {
-      return { ok: false, error: "Only single cards can move to a free cell." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     if (!Number.isInteger(to.index) || to.index < 0 || to.index >= state.freeCells.length) {
-      return { ok: false, error: "Invalid free cell." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     const cell = state.freeCells[to.index];
     if (cell.cardId) {
-      return { ok: false, error: "That free cell already has a card." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     if (cell.lock) {
-      return { ok: false, error: "That free cell is being edited." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
     if (!cell.name.trim()) {
-      return { ok: false, error: "A character must stand in that free cell." };
+      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
 
     if (from.type === "tableau") {
@@ -373,7 +374,7 @@ function applyMove(state, move) {
     return { ok: true };
   }
 
-  return { ok: false, error: "Invalid destination pile." };
+  return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
 }
 
 function lockFreeCell(state, index, socketId) {

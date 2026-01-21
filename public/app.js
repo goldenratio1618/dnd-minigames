@@ -183,6 +183,16 @@
       if (location.type === "tableau" && !location.isTop) {
         return;
       }
+      if (
+        selection &&
+        selection.cardId === card.id &&
+        selection.from.type === location.type &&
+        selection.from.index === location.index
+      ) {
+        selection = null;
+        render();
+        return;
+      }
       if (selection) {
         attemptMove({ type: location.type, index: location.index });
         return;
@@ -220,7 +230,6 @@
         event.dataTransfer.setData("text/plain", card.id);
         event.dataTransfer.effectAllowed = "move";
         selection = dragState;
-        render();
       });
       cardEl.addEventListener("dragend", () => {
         dragState = null;
