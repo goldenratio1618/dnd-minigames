@@ -24,9 +24,18 @@ function createDeck() {
   return deck;
 }
 
-function shuffle(array) {
+function createRng(seed) {
+  let value = Number.isInteger(seed) ? seed : 42;
+  return () => {
+    value = (value * 1664525 + 1013904223) % 4294967296;
+    return value / 4294967296;
+  };
+}
+
+function shuffle(array, rng) {
+  const random = rng || Math.random;
   for (let i = array.length - 1; i > 0; i -= 1) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = Math.floor(random() * (i + 1));
     const temp = array[i];
     array[i] = array[j];
     array[j] = temp;
@@ -55,8 +64,8 @@ function dealTableau(deck) {
   return tableau;
 }
 
-function assignTraps(deck, trapCount) {
-  const selection = shuffle(deck.map((card) => card.id)).slice(
+function assignTraps(deck, trapCount, rng) {
+  const selection = shuffle(deck.map((card) => card.id), rng).slice(
     0,
     Math.min(trapCount, deck.length)
   );
@@ -69,19 +78,21 @@ function assignTraps(deck, trapCount) {
   return selection.length;
 }
 
-function createGame({ trapCount = 10 } = {}) {
-  const deck = shuffle(createDeck());
+function createGame({ trapCount = 10, seed = 42 } = {}) {
+  const rng = createRng(seed);
+  const deck = shuffle(createDeck(), rng);
   const cardsById = {};
   for (const card of deck) {
     cardsById[card.id] = card;
   }
 
   const safeTrapCount = normalizeTrapCount(trapCount);
-  const assignedTrapCount = assignTraps(deck, safeTrapCount);
+  const assignedTrapCount = assignTraps(deck, safeTrapCount, rng);
 
   return {
     gameId: "arcane-cells",
     name: "Arcane Cells",
+    seed,
     trapCount: assignedTrapCount,
     cardsById,
     tableau: dealTableau(deck),

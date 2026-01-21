@@ -15,6 +15,7 @@
   const dmTrapConfirm = document.getElementById("trap-confirm");
   const startGameButton = document.getElementById("start-game");
   const trapCountInput = document.getElementById("trap-count");
+  const seedInput = document.getElementById("seed-input");
 
   const defaultMessage = messageBar ? messageBar.innerHTML : "";
 
@@ -389,17 +390,7 @@
           delay: 0,
         });
         pileEl.appendChild(cardEl);
-      } else {
-        const label = document.createElement("div");
-        label.className = "foundation-label";
-        label.textContent = pile.color;
-        pileEl.appendChild(label);
       }
-
-      const count = document.createElement("div");
-      count.className = "foundation-count";
-      count.textContent = `${pile.count}`;
-      pileEl.appendChild(count);
 
       foundationsEl.appendChild(pileEl);
     });
@@ -529,14 +520,18 @@
   if (isDM && startGameButton) {
     startGameButton.addEventListener("click", () => {
       const trapCount = trapCountInput ? trapCountInput.value : 10;
-      socket.emit("startGame", { trapCount });
+      const seed = seedInput ? seedInput.value : 42;
+      socket.emit("startGame", {
+        trapCount,
+        seed: Number.parseInt(seed, 10),
+      });
     });
   }
 
   const resetGameButton = document.getElementById("reset-game");
   if (resetGameButton) {
     resetGameButton.addEventListener("click", () => {
-      if (!window.confirm("Reset the board and reshuffle all traps?")) {
+      if (!window.confirm("Reset the board?")) {
         return;
       }
       if (!isDM) {

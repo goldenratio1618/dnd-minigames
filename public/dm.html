@@ -10,11 +10,17 @@
     <div class="page">
       <header class="site-header dm-header">
         <div class="title-group">
-          <p class="title-eyebrow">Dungeon Master Console</p>
+          <p class="title-eyebrow">Cavern Puzzles</p>
           <h1>Arcane Cells</h1>
-          <p class="subtitle">Guide the warding stones and watch for hidden traps.</p>
+          <p class="subtitle"></p>
         </div>
         <div class="header-actions">
+          <div class="header-verse">
+            Mana in chaos, factions at war;<br />
+            Restore order to open the door.<br />
+            Blocks in the way are yours to hold;<br />
+            But be impulsive and they will explode.
+          </div>
           <button class="reset-button" id="reset-game" type="button">RESET</button>
           <div class="status" id="status">Connecting...</div>
         </div>
@@ -30,6 +36,8 @@
         <div class="panel-row">
           <label for="trap-count">Trap cards</label>
           <input id="trap-count" type="number" min="0" max="52" value="10" />
+          <label for="seed-input">Seed</label>
+          <input id="seed-input" type="number" value="42" />
           <button id="start-game">Start new game</button>
         </div>
         <div id="trap-alert" class="trap-alert hidden">
@@ -45,6 +53,7 @@
             <div id="free-cells" class="free-cells"></div>
           </div>
           <div class="zone">
+            <h2 class="zone-title">Order</h2>
             <div id="foundations" class="foundations"></div>
           </div>
         </section>
@@ -54,9 +63,7 @@
         </section>
       </main>
 
-      <footer class="instructions" id="message-bar">
-        You see trap sigils and numbers. Players see only the rune hints.
-      </footer>
+      <footer class="instructions" id="message-bar"></footer>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>

@@ -9,6 +9,8 @@ const HOST = process.env.HOST || "0.0.0.0";
 
 const app = express();
 app.set("trust proxy", false);
+const DM_PASSWORD = "python";
+const DM_COOKIE_NAME = "dm-auth";
 
 function normalizeAddress(address) {
   if (!address) {
@@ -76,7 +78,67 @@ function privateOnly(req, res, next) {
   res.status(403).send("Access limited to local networks.");
 }
 
+function parseCookies(req) {
+  const header = req.headers.cookie || "";
+  const entries = header.split(";").map((part) => part.trim()).filter(Boolean);
+  return entries.reduce((acc, entry) => {
+    const [key, ...rest] = entry.split("=");
+    if (!key) {
+      return acc;
+    }
+    acc[key] = decodeURIComponent(rest.join("="));
+    return acc;
+  }, {});
+}
+
 app.use(privateOnly);
+app.use(express.urlencoded({ extended: false }));
+
+app.get("/dm.html", (req, res) => {
+  const cookies = parseCookies(req);
+  if (cookies[DM_COOKIE_NAME] === DM_PASSWORD) {
+    res.sendFile(path.join(__dirname, "..", "public", "dm.html"));
+    return;
+  }
+  res.status(401).send(`
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>DM Access</title>
+        <style>
+          body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#120f0b;color:#f4e8cf;font-family:"Cinzel","Garamond",serif;}
+          form{background:rgba(12,9,6,0.85);border:1px solid rgba(255,255,255,0.12);padding:24px 28px;border-radius:14px;box-shadow:0 12px 24px rgba(0,0,0,0.45);min-width:280px;}
+          label{display:block;margin-bottom:8px;letter-spacing:0.12em;text-transform:uppercase;font-size:0.75rem;color:#c9b48b;}
+          input{width:100%;padding:10px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.2);background:#0b0906;color:#f4e8cf;font-size:1rem;}
+          button{margin-top:14px;width:100%;padding:10px 12px;border-radius:10px;border:none;background:#b31212;color:#fbe7e2;font-weight:bold;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;}
+        </style>
+      </head>
+      <body>
+        <form method="post" action="/dm-auth">
+          <label for="dm-password">DM Password</label>
+          <input id="dm-password" name="password" type="password" autocomplete="current-password" />
+          <button type="submit">Enter</button>
+        </form>
+      </body>
+    </html>
+  `);
+});
+
+app.post("/dm-auth", (req, res) => {
+  const password = String(req.body && req.body.password ? req.body.password : "");
+  if (password !== DM_PASSWORD) {
+    res.status(401).send("Incorrect password.");
+    return;
+  }
+  res.setHeader(
+    "Set-Cookie",
+    `${DM_COOKIE_NAME}=${encodeURIComponent(DM_PASSWORD)}; Path=/; SameSite=Lax`
+  );
+  res.redirect("/dm.html");
+});
+
 app.use(express.static(path.join(__dirname, "..", "public")));
 
 const server = http.createServer(app);
@@ -94,7 +156,8 @@ io.use((socket, next) => {
   return next(new Error("Access limited to local networks."));
 });
 
-let state = game.createGame({ trapCount: 10 });
+const DEFAULT_SEED = 42;
+let state = game.createGame({ trapCount: 10, seed: DEFAULT_SEED });
 
 function sendState(socket) {
   const role = socket.data.role || "player";
@@ -126,7 +189,8 @@ io.on("connection", (socket) => {
       return;
     }
     const trapCount = game.normalizeTrapCount(payload && payload.trapCount);
-    state = game.createGame({ trapCount });
+    const seed = Number.isInteger(payload && payload.seed) ? payload.seed : DEFAULT_SEED;
+    state = game.createGame({ trapCount, seed });
     broadcastState();
   });
 
@@ -134,7 +198,7 @@ io.on("connection", (socket) => {
     if (socket.data.role !== "dm") {
       return;
     }
-    state = game.createGame({ trapCount: state.trapCount });
+    state = game.createGame({ trapCount: state.trapCount, seed: DEFAULT_SEED });
     broadcastState();
   });
 

@@ -73,7 +73,16 @@ body::after {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.header-verse {
+  font-size: 1.05rem;
+  line-height: 1.4;
+  color: var(--text);
+  text-align: right;
 }
 
 .title-group h1 {
@@ -335,6 +344,7 @@ body.loaded .board {
   letter-spacing: 0.02em;
   overflow: hidden;
   cursor: pointer;
+  --texture-opacity: 0.4;
 }
 
 .card::after {
@@ -344,7 +354,7 @@ body.loaded .board {
   background-image:
     repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px 7px),
     radial-gradient(circle at 30% 30%, rgba(255, 255, 255, 0.08), transparent 60%);
-  opacity: 0.4;
+  opacity: var(--texture-opacity);
   pointer-events: none;
 }
 
@@ -418,11 +428,13 @@ body.loaded .board {
 .card-white {
   background: var(--card-white);
   color: #3a2f24;
+  --texture-opacity: 0.65;
 }
 
 .card-green {
   background: var(--card-green);
   color: #122114;
+  --texture-opacity: 0.65;
 }
 
 .card-blue {
