@@ -12,31 +12,36 @@
         <div class="title-group">
           <p class="title-eyebrow">Cavern Puzzles</p>
           <h1>Arcane Cells</h1>
-          <p class="subtitle">Arrange the sigils to calm the warding stones.</p>
+          <p class="subtitle"></p>
         </div>
-        <div class="status" id="status">Connecting...</div>
+        <div class="header-actions">
+          <button class="reset-button" id="reset-game" type="button">RESET</button>
+          <div class="status" id="status">Connecting...</div>
+        </div>
       </header>
 
       <main id="board" class="board">
         <section class="top-row">
           <div class="zone">
-            <h2 class="zone-title">Free Cells</h2>
+            <h2 class="zone-title">Player Spaces</h2>
             <div id="free-cells" class="free-cells"></div>
           </div>
           <div class="zone">
-            <h2 class="zone-title">Foundations</h2>
             <div id="foundations" class="foundations"></div>
           </div>
         </section>
 
         <section class="tableau-wrap">
-          <h2 class="zone-title">Tableau</h2>
           <div id="tableau" class="tableau"></div>
         </section>
       </main>
 
       <footer class="instructions" id="message-bar">
-        Click a card or stack, then click a destination. Name a free cell before placing a card there.
+        Mana in chaos, factions at war;<br />
+        Restore order to open the door.<br />
+        <br />
+        Blocks in the way are yours to hold;<br />
+        But be impulsive and they will explode.
       </footer>
     </div>
 

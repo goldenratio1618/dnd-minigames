@@ -14,7 +14,10 @@
           <h1>Arcane Cells</h1>
           <p class="subtitle">Guide the warding stones and watch for hidden traps.</p>
         </div>
-        <div class="status" id="status">Connecting...</div>
+        <div class="header-actions">
+          <button class="reset-button" id="reset-game" type="button">RESET</button>
+          <div class="status" id="status">Connecting...</div>
+        </div>
       </header>
 
       <section class="dm-panel">
@@ -38,17 +41,15 @@
       <main id="board" class="board">
         <section class="top-row">
           <div class="zone">
-            <h2 class="zone-title">Free Cells</h2>
+            <h2 class="zone-title">Player Spaces</h2>
             <div id="free-cells" class="free-cells"></div>
           </div>
           <div class="zone">
-            <h2 class="zone-title">Foundations</h2>
             <div id="foundations" class="foundations"></div>
           </div>
         </section>
 
         <section class="tableau-wrap">
-          <h2 class="zone-title">Tableau</h2>
           <div id="tableau" class="tableau"></div>
         </section>
       </main>

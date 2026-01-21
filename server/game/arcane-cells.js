@@ -199,23 +199,6 @@ function serializeState(state, { role, socketId }) {
   };
 }
 
-function isValidTableauSequence(cardIds, cardsById) {
-  for (let i = 0; i < cardIds.length - 1; i += 1) {
-    const current = cardsById[cardIds[i]];
-    const next = cardsById[cardIds[i + 1]];
-    if (!current || !next) {
-      return false;
-    }
-    if (current.value !== next.value + 1) {
-      return false;
-    }
-    if (COLOR_GROUP[current.color] === COLOR_GROUP[next.color]) {
-      return false;
-    }
-  }
-  return true;
-}
-
 function canPlaceOnTableau(card, destCard) {
   return (
     COLOR_GROUP[card.color] !== COLOR_GROUP[destCard.color] &&
@@ -229,26 +212,6 @@ function canPlaceOnFoundation(card, pileIds, cardsById) {
   }
   const topCard = cardsById[pileIds[pileIds.length - 1]];
   return card.value === topCard.value + 1;
-}
-
-function getTableauStack(state, fromIndex, cardId) {
-  const column = state.tableau[fromIndex];
-  const startIndex = column.indexOf(cardId);
-  if (startIndex === -1) {
-    return null;
-  }
-  return column.slice(startIndex);
-}
-
-function countEmptyTableau(state, excludeIndex) {
-  return state.tableau.filter((column, index) => column.length === 0 && index !== excludeIndex)
-    .length;
-}
-
-function countEmptyFreeCells(state) {
-  return state.freeCells.filter(
-    (cell) => !cell.cardId && cell.name.trim() && !cell.lock
-  ).length;
 }
 
 function applyMove(state, move) {
@@ -271,13 +234,14 @@ function applyMove(state, move) {
     if (!move.cardId) {
       return { ok: false, error: "Select a card to move." };
     }
-    stack = getTableauStack(state, from.index, move.cardId);
-    if (!stack) {
+    const column = state.tableau[from.index];
+    if (!column.includes(move.cardId)) {
       return { ok: false, error: "That card is not in the selected column." };
     }
-    if (!isValidTableauSequence(stack, state.cardsById)) {
-      return { ok: false, error: "Only descending alternating runs can be moved." };
+    if (column[column.length - 1] !== move.cardId) {
+      return { ok: false, error: "Only the top card can be moved." };
     }
+    stack = [move.cardId];
   } else if (from.type === "freeCell") {
     if (!Number.isInteger(from.index) || from.index < 0 || from.index >= state.freeCells.length) {
       return { ok: false, error: "Invalid free cell." };
@@ -301,16 +265,6 @@ function applyMove(state, move) {
     }
     if (from.type === "tableau" && from.index === to.index) {
       return { ok: false, error: "Select a different column." };
-    }
-
-    const emptyFreeCells = countEmptyFreeCells(state);
-    const emptyColumns = countEmptyTableau(state, to.index);
-    const maxMovable = (emptyFreeCells + 1) * (emptyColumns + 1);
-    if (stack.length > maxMovable) {
-      return {
-        ok: false,
-        error: "Not enough free space to move that run.",
-      };
     }
 
     const destination = state.tableau[to.index];
@@ -390,8 +344,10 @@ function applyMove(state, move) {
     cell.cardId = card.id;
 
     if (card.trapId) {
+      const triggeredTrap = card.trapId;
+      card.trapId = null;
       state.pendingTrap = {
-        trapId: card.trapId,
+        trapId: triggeredTrap,
         triggeredByName: cell.name.trim(),
         cardId: card.id,
         freeCellIndex: to.index,
@@ -399,7 +355,7 @@ function applyMove(state, move) {
       return {
         ok: true,
         trapTriggered: true,
-        trapMessage: `Trap #${card.trapId} triggered by ${cell.name.trim()}`,
+        trapMessage: `Trap #${triggeredTrap} triggered by ${cell.name.trim()}`,
       };
     }
 

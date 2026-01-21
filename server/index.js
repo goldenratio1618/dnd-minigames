@@ -130,6 +130,14 @@ io.on("connection", (socket) => {
     broadcastState();
   });
 
+  socket.on("resetGame", () => {
+    if (socket.data.role !== "dm") {
+      return;
+    }
+    state = game.createGame({ trapCount: state.trapCount });
+    broadcastState();
+  });
+
   socket.on("move", (move) => {
     if (state.pendingTrap) {
       socket.emit("actionError", {

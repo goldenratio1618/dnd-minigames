@@ -16,7 +16,7 @@
   const startGameButton = document.getElementById("start-game");
   const trapCountInput = document.getElementById("trap-count");
 
-  const defaultMessage = messageBar ? messageBar.textContent : "";
+  const defaultMessage = messageBar ? messageBar.innerHTML : "";
 
   let state = null;
   let selection = null;
@@ -24,6 +24,7 @@
   let editingDraft = "";
   let initialRender = true;
   let messageTimeout = null;
+  let dragState = null;
 
   function setStatus(text) {
     if (statusEl) {
@@ -41,7 +42,7 @@
       clearTimeout(messageTimeout);
     }
     messageTimeout = setTimeout(() => {
-      messageBar.textContent = defaultMessage;
+      messageBar.innerHTML = defaultMessage;
       messageBar.classList.remove("message-alert");
     }, 3000);
   }
@@ -111,16 +112,31 @@
     render();
   }
 
-  function attemptMove(to) {
-    if (!selection || !state || isFrozen()) {
+  function executeMove(from, cardId, to) {
+    if (!from || !cardId || !state || isFrozen()) {
       return;
     }
     socket.emit("move", {
-      from: selection.from,
+      from,
       to,
-      cardId: selection.cardId,
+      cardId,
     });
     selection = null;
+    dragState = null;
+  }
+
+  function attemptMove(to) {
+    if (!selection) {
+      return;
+    }
+    executeMove(selection.from, selection.cardId, to);
+  }
+
+  function attemptDragMove(to) {
+    if (!dragState) {
+      return;
+    }
+    executeMove(dragState.from, dragState.cardId, to);
   }
 
   function createCardElement(card, location) {
@@ -133,15 +149,6 @@
     if (selection) {
       if (selection.cardId === card.id) {
         cardEl.classList.add("selected");
-      } else if (selection.from.type === "tableau" && selection.from.index === location.index) {
-        const column = state.tableau[location.index];
-        const stackIndex = column.findIndex((entry) => entry.id === selection.cardId);
-        if (stackIndex !== -1) {
-          const stackIds = column.slice(stackIndex).map((entry) => entry.id);
-          if (stackIds.includes(card.id)) {
-            cardEl.classList.add("selected-stack");
-          }
-        }
       }
     }
 
@@ -150,24 +157,31 @@
       cardEl.style.setProperty("--delay", `${location.delay}ms`);
     }
 
+    const manaEl = document.createElement("div");
+    manaEl.className = `mana-symbol mana-${card.color}`;
+
     const valueEl = document.createElement("div");
     valueEl.className = "card-value";
     valueEl.textContent = String(card.value);
 
     const hintEl = document.createElement("div");
     hintEl.className = "card-hint";
-    hintEl.textContent = String(card.hint);
+    hintEl.textContent = String(location.type === "foundation" ? 0 : card.hint);
 
     const trapEl = document.createElement("div");
     trapEl.className = "card-trap";
     trapEl.textContent = card.trapId ? `#${card.trapId}` : "";
 
+    cardEl.appendChild(manaEl);
     cardEl.appendChild(valueEl);
     cardEl.appendChild(hintEl);
     cardEl.appendChild(trapEl);
 
     cardEl.addEventListener("click", (event) => {
       event.stopPropagation();
+      if (location.type === "tableau" && !location.isTop) {
+        return;
+      }
       if (selection) {
         attemptMove({ type: location.type, index: location.index });
         return;
@@ -177,6 +191,42 @@
       }
       selectCard(card.id, location);
     });
+
+    cardEl.addEventListener("dragover", (event) => {
+      if (!dragState || isFrozen()) {
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    });
+
+    cardEl.addEventListener("drop", (event) => {
+      if (!dragState || isFrozen()) {
+        return;
+      }
+      event.preventDefault();
+      attemptDragMove({ type: location.type, index: location.index });
+    });
+
+    if (location.type !== "foundation" && (location.type !== "tableau" || location.isTop)) {
+      cardEl.setAttribute("draggable", "true");
+      cardEl.addEventListener("dragstart", (event) => {
+        if (isFrozen()) {
+          event.preventDefault();
+          return;
+        }
+        dragState = { cardId: card.id, from: { type: location.type, index: location.index } };
+        event.dataTransfer.setData("text/plain", card.id);
+        event.dataTransfer.effectAllowed = "move";
+        selection = dragState;
+        render();
+      });
+      cardEl.addEventListener("dragend", () => {
+        dragState = null;
+        selection = null;
+        render();
+      });
+    }
 
     return cardEl;
   }
@@ -211,6 +261,20 @@
         if (selection) {
           attemptMove({ type: "freeCell", index });
         }
+      });
+      slot.addEventListener("dragover", (event) => {
+        if (!dragState || isFrozen()) {
+          return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      });
+      slot.addEventListener("drop", (event) => {
+        if (!dragState || isFrozen()) {
+          return;
+        }
+        event.preventDefault();
+        attemptDragMove({ type: "freeCell", index });
       });
 
       if (cell.card) {
@@ -299,6 +363,24 @@
           attemptMove({ type: "foundation", index });
         }
       });
+      pileEl.addEventListener("dragover", (event) => {
+        if (!dragState || isFrozen()) {
+          return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      });
+      pileEl.addEventListener("drop", (event) => {
+        if (!dragState || isFrozen()) {
+          return;
+        }
+        event.preventDefault();
+        attemptDragMove({ type: "foundation", index });
+      });
+
+      const manaEl = document.createElement("div");
+      manaEl.className = `mana-symbol mana-${pile.color}`;
+      pileEl.appendChild(manaEl);
 
       if (pile.topCard) {
         const cardEl = createCardElement(pile.topCard, {
@@ -338,6 +420,20 @@
           attemptMove({ type: "tableau", index });
         }
       });
+      columnEl.addEventListener("dragover", (event) => {
+        if (!dragState || isFrozen()) {
+          return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+      });
+      columnEl.addEventListener("drop", (event) => {
+        if (!dragState || isFrozen()) {
+          return;
+        }
+        event.preventDefault();
+        attemptDragMove({ type: "tableau", index });
+      });
 
       if (column.length === 0) {
         const placeholder = document.createElement("div");
@@ -350,6 +446,7 @@
         const cardEl = createCardElement(card, {
           type: "tableau",
           index,
+          isTop: cardIndex === column.length - 1,
           delay: (index + 1) * 40 + cardIndex * 10,
         });
         columnEl.appendChild(cardEl);
@@ -433,6 +530,20 @@
     startGameButton.addEventListener("click", () => {
       const trapCount = trapCountInput ? trapCountInput.value : 10;
       socket.emit("startGame", { trapCount });
+    });
+  }
+
+  const resetGameButton = document.getElementById("reset-game");
+  if (resetGameButton) {
+    resetGameButton.addEventListener("click", () => {
+      if (!window.confirm("Reset the board and reshuffle all traps?")) {
+        return;
+      }
+      if (!isDM) {
+        setMessage("Only the DM can reset the board.");
+        return;
+      }
+      socket.emit("resetGame");
     });
   }
 })();
