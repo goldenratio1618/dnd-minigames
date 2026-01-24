@@ -167,6 +167,17 @@ body::after {
   cursor: pointer;
 }
 
+.solver-hidden {
+  display: none;
+}
+
+.panel-row button:disabled,
+.trap-alert button:disabled,
+.reset-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .reset-button {
   background: #b31212;
   border: none;

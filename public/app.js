@@ -14,6 +14,9 @@
   const dmTrapMessage = document.getElementById("trap-message");
   const dmTrapConfirm = document.getElementById("trap-confirm");
   const startGameButton = document.getElementById("start-game");
+  const solveGameButton = document.getElementById("solve-game");
+  const demoSolutionButton = document.getElementById("demo-solution");
+  const reassignTrapsButton = document.getElementById("reassign-traps");
   const trapCountInput = document.getElementById("trap-count");
   const seedInput = document.getElementById("seed-input");
 
@@ -26,6 +29,10 @@
   let initialRender = true;
   let messageTimeout = null;
   let dragState = null;
+  let solving = false;
+  let solverAvailable = false;
+  let demoActive = false;
+  let reassigningTraps = false;
 
   function setStatus(text) {
     if (statusEl) {
@@ -46,6 +53,37 @@
       messageBar.innerHTML = defaultMessage;
       messageBar.classList.remove("message-alert");
     }, 3000);
+  }
+
+  function setSolvingState(active) {
+    solving = active;
+    if (!solveGameButton) {
+      return;
+    }
+    solveGameButton.disabled = active;
+    solveGameButton.textContent = active ? "Solving..." : "Solve puzzle";
+    updateSolverControls();
+  }
+
+  function updateSolverControls() {
+    if (!isDM) {
+      return;
+    }
+    if (demoSolutionButton) {
+      demoSolutionButton.classList.toggle("solver-hidden", !solverAvailable);
+      demoSolutionButton.disabled = !solverAvailable || solving || demoActive;
+      demoSolutionButton.textContent = demoActive
+        ? "Demonstrating..."
+        : "Demonstrate solution";
+    }
+    if (reassignTrapsButton) {
+      reassignTrapsButton.classList.toggle("solver-hidden", !solverAvailable);
+      reassignTrapsButton.disabled =
+        !solverAvailable || solving || demoActive || reassigningTraps;
+      reassignTrapsButton.textContent = reassigningTraps
+        ? "Reassigning..."
+        : "Reassign traps";
+    }
   }
 
   function clearSelectionIfMissing() {
@@ -498,6 +536,12 @@
 
   socket.on("state", (newState) => {
     state = newState;
+    if (isDM) {
+      const solverStatus = state && state.solver;
+      solverAvailable = Boolean(solverStatus && solverStatus.available);
+      demoActive = Boolean(solverStatus && solverStatus.demoActive);
+      updateSolverControls();
+    }
     render();
   });
 
@@ -510,6 +554,60 @@
   socket.on("trapTriggered", (payload) => {
     if (isDM && payload && payload.message) {
       setMessage(payload.message);
+    }
+  });
+
+  socket.on("solverResult", (payload) => {
+    if (!isDM) {
+      return;
+    }
+    setSolvingState(false);
+    solverAvailable = true;
+    updateSolverControls();
+    const moves = payload && Number.isInteger(payload.moves) ? payload.moves : null;
+    if (moves !== null) {
+      setMessage(`Solver completed in ${moves} moves.`);
+    } else {
+      setMessage("Solver completed.");
+    }
+  });
+
+  socket.on("solverError", (payload) => {
+    if (!isDM) {
+      return;
+    }
+    setSolvingState(false);
+    demoActive = false;
+    reassigningTraps = false;
+    updateSolverControls();
+    setMessage(payload && payload.message ? payload.message : "Solver failed.");
+  });
+
+  socket.on("solverDemoComplete", (payload) => {
+    if (!isDM) {
+      return;
+    }
+    demoActive = false;
+    updateSolverControls();
+    const moves = payload && Number.isInteger(payload.moves) ? payload.moves : null;
+    if (moves !== null) {
+      setMessage(`Demo complete (${moves} moves).`);
+    } else {
+      setMessage("Demo complete.");
+    }
+  });
+
+  socket.on("trapReassigned", (payload) => {
+    if (!isDM) {
+      return;
+    }
+    reassigningTraps = false;
+    updateSolverControls();
+    const traps = payload && Number.isInteger(payload.trapCount) ? payload.trapCount : null;
+    if (traps !== null) {
+      setMessage(`Traps reassigned (${traps} total).`);
+    } else {
+      setMessage("Traps reassigned.");
     }
   });
 
@@ -534,6 +632,54 @@
         trapCount,
         seed: Number.parseInt(seed, 10),
       });
+    });
+  }
+
+  if (isDM && solveGameButton) {
+    solveGameButton.addEventListener("click", () => {
+      if (solving) {
+        return;
+      }
+      if (!window.confirm("Solve the puzzle now?")) {
+        return;
+      }
+      setSolvingState(true);
+      setMessage("Solving puzzle...");
+      socket.emit("solveGame");
+    });
+  }
+
+  if (isDM && demoSolutionButton) {
+    demoSolutionButton.addEventListener("click", () => {
+      if (!solverAvailable || demoActive) {
+        return;
+      }
+      if (!window.confirm("Demonstrate the solution move by move?")) {
+        return;
+      }
+      demoActive = true;
+      updateSolverControls();
+      setMessage("Demonstrating solution...");
+      socket.emit("demoSolution");
+    });
+  }
+
+  if (isDM && reassignTrapsButton) {
+    reassignTrapsButton.addEventListener("click", () => {
+      if (!solverAvailable || demoActive || reassigningTraps) {
+        return;
+      }
+      if (
+        !window.confirm(
+          "Reassign traps only to cards never placed in the free cells?"
+        )
+      ) {
+        return;
+      }
+      reassigningTraps = true;
+      updateSolverControls();
+      setMessage("Reassigning traps...");
+      socket.emit("reassignTraps");
     });
   }
 

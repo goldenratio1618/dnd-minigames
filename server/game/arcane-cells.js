@@ -226,7 +226,9 @@ function canPlaceOnFoundation(card, pileIds, cardsById) {
   return card.value === topCard.value + 1;
 }
 
-function applyMove(state, move) {
+function applyMove(state, move, options = {}) {
+  const ignoreFreeCellRules = Boolean(options.ignoreFreeCellRules);
+  const ignoreTraps = Boolean(options.ignoreTraps);
   if (!move || !move.from || !move.to) {
     return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
   }
@@ -338,11 +340,13 @@ function applyMove(state, move) {
     if (cell.cardId) {
       return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
     }
-    if (cell.lock) {
-      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
-    }
-    if (!cell.name.trim()) {
-      return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
+    if (!ignoreFreeCellRules) {
+      if (cell.lock) {
+        return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
+      }
+      if (!cell.name.trim()) {
+        return { ok: false, error: ILLEGAL_MOVE_MESSAGE };
+      }
     }
 
     if (from.type === "tableau") {
@@ -355,7 +359,7 @@ function applyMove(state, move) {
     const card = state.cardsById[stack[0]];
     cell.cardId = card.id;
 
-    if (card.trapId) {
+    if (card.trapId && !ignoreTraps) {
       const triggeredTrap = card.trapId;
       card.trapId = null;
       state.pendingTrap = {
