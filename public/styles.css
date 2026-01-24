@@ -13,6 +13,20 @@
   --card-blue: #4b6fb5;
   --card-black: #2b2a28;
   --shadow: rgba(0, 0, 0, 0.45);
+  --mine-floor: #1c160e;
+  --mine-floor-lit: #2c2416;
+  --mine-wall: #0c0a07;
+  --mine-wall-edge: rgba(255, 255, 255, 0.08);
+  --mine-fog: #100d09;
+  --mine-fog-glow: rgba(224, 194, 124, 0.12);
+  --mine-border: rgba(255, 255, 255, 0.06);
+  --mine-treasure: #d8b15d;
+  --mine-trap: #e07a52;
+  --mine-exit: #9fc7ff;
+  --monster-green: #6acb7c;
+  --monster-yellow: #d9c058;
+  --monster-red: #e0665a;
+  --monster-violet: #b38bd9;
 }
 
 * {
@@ -549,7 +563,363 @@ body.loaded .board {
   letter-spacing: 0.08em;
 }
 
+.mine-board {
+  display: grid;
+  gap: 24px;
+  opacity: 0;
+  transform: translateY(12px);
+  animation: board-in 0.8s ease-out forwards;
+}
+
+body.loaded .mine-board {
+  opacity: 1;
+}
+
+.mine-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(16, 12, 7, 0.7);
+  border: 1px solid rgba(224, 194, 124, 0.2);
+  box-shadow: 0 10px 20px var(--shadow);
+}
+
+.mine-level {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--text-muted);
+}
+
+.mine-roster {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.token-card {
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(10, 8, 5, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  gap: 6px;
+  min-height: 70px;
+}
+
+.token-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(14, 11, 7, 0.7);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  background-size: cover;
+  background-position: center;
+}
+
+.token-avatar.has-avatar {
+  color: transparent;
+}
+
+.token-avatar-input {
+  display: none;
+}
+
+.token-avatar-button,
+.token-avatar-clear {
+  background: rgba(209, 143, 60, 0.9);
+  border: none;
+  color: #1a1107;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.token-avatar-clear {
+  background: rgba(80, 10, 10, 0.7);
+  color: #fbe7e2;
+}
+
+.token-name {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text);
+}
+
+.token-name-editable {
+  cursor: pointer;
+}
+
+.token-input {
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(8, 6, 4, 0.8);
+  color: var(--text);
+  font-family: "Crimson Text", "Garamond", serif;
+  font-size: 0.9rem;
+}
+
+.token-gold {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+}
+
+.mine-legend {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.legend-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--text-muted);
+}
+
+.legend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px 12px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.legend-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  border-radius: 8px;
+  min-width: 56px;
+  background: rgba(6, 5, 4, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  font-weight: bold;
+  color: var(--text);
+}
+
+.chip-block {
+  color: var(--accent);
+}
+
+.chip-number {
+  color: var(--text);
+}
+
+.chip-trap {
+  color: var(--mine-trap);
+}
+
+.chip-treasure {
+  color: var(--mine-treasure);
+}
+
+.chip-exit {
+  color: var(--mine-exit);
+}
+
+.chip-start {
+  color: #bfe3b0;
+}
+
+.chip-fog {
+  color: var(--text-muted);
+}
+
+.chip-monster {
+  color: var(--text);
+}
+
+.mine-grid-wrap {
+  padding: 14px;
+  border-radius: 16px;
+  background: rgba(8, 6, 4, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 24px var(--shadow);
+  overflow-x: auto;
+}
+
+.mine-grid {
+  display: grid;
+  gap: 2px;
+  --cell-size: clamp(26px, 3.2vw, 44px);
+  width: max-content;
+}
+
+.mine-cell {
+  width: var(--cell-size);
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 1px solid var(--mine-border);
+  background: var(--mine-fog);
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: bold;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  transition: transform 0.12s ease;
+}
+
+.cell-hidden {
+  background: var(--mine-fog);
+}
+
+.cell-adjacent {
+  background: var(--mine-floor);
+  box-shadow: inset 0 0 0 1px var(--mine-fog-glow);
+}
+
+.cell-start {
+  outline: 1px dashed rgba(191, 227, 176, 0.6);
+}
+
+.cell-start-label {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  font-size: 0.5rem;
+  letter-spacing: 0.14em;
+  color: #bfe3b0;
+  text-transform: uppercase;
+}
+
+.cell-uncovered {
+  background: var(--mine-floor-lit);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.cell-rock {
+  background: var(--mine-wall);
+  box-shadow: inset 0 0 0 1px var(--mine-wall-edge);
+}
+
+.cell-block {
+  background: rgba(60, 48, 30, 0.9);
+  border-color: rgba(224, 194, 124, 0.35);
+}
+
+.cell-trap {
+  color: var(--mine-trap);
+}
+
+.cell-treasure {
+  color: var(--mine-treasure);
+}
+
+.cell-exit {
+  color: var(--mine-exit);
+}
+
+.cell-unknown {
+  color: var(--text-muted);
+}
+
+.cell-drop {
+  outline: 2px solid var(--accent);
+  transform: scale(1.02);
+}
+
+.cell-content {
+  font-size: 0.9rem;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.cell-tokens {
+  position: absolute;
+  bottom: 3px;
+  left: 3px;
+  display: flex;
+  gap: 2px;
+}
+
+.token-marker {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(224, 194, 124, 0.9);
+  color: #2a1b0f;
+  font-size: 0.7rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px var(--shadow);
+  background-size: cover;
+  background-position: center;
+}
+
+.token-marker.token-has-avatar {
+  color: transparent;
+}
+
+.token-locked {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.monster-marker {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  font-weight: bold;
+  color: #1a1107;
+  box-shadow: 0 2px 6px var(--shadow);
+}
+
+.monster-green {
+  background: var(--monster-green);
+}
+
+.monster-yellow {
+  background: var(--monster-yellow);
+}
+
+.monster-red {
+  background: var(--monster-red);
+}
+
+.monster-violet {
+  background: var(--monster-violet);
+}
+
 body.frozen .board {
+  pointer-events: none;
+  filter: grayscale(0.2) brightness(0.7);
+}
+
+body.frozen .mine-board {
   pointer-events: none;
   filter: grayscale(0.2) brightness(0.7);
 }
@@ -596,6 +966,10 @@ body.frozen .board {
   .tableau {
     grid-template-columns: repeat(4, minmax(80px, 1fr));
   }
+
+  .mine-grid {
+    --cell-size: clamp(24px, 4vw, 36px);
+  }
 }
 
 @media (max-width: 600px) {
@@ -610,5 +984,20 @@ body.frozen .board {
 
   .tableau {
     grid-template-columns: repeat(2, minmax(90px, 1fr));
+  }
+
+  .mine-panel {
+    padding: 12px 14px;
+  }
+
+  .mine-roster {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .token-marker,
+  .monster-marker {
+    width: 16px;
+    height: 16px;
+    font-size: 0.6rem;
   }
 }

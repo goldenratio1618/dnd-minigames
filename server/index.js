@@ -4,6 +4,7 @@ const path = require("path");
 const { Server } = require("socket.io");
 const game = require("./game/arcane-cells");
 const solver = require("./game/arcane-cells-solver");
+const minesGame = require("./game/echoing-mines");
 
 const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -95,10 +96,10 @@ function parseCookies(req) {
 app.use(privateOnly);
 app.use(express.urlencoded({ extended: false }));
 
-app.get("/dm.html", (req, res) => {
+function serveDmPage(req, res, filename) {
   const cookies = parseCookies(req);
   if (cookies[DM_COOKIE_NAME] === DM_PASSWORD) {
-    res.sendFile(path.join(__dirname, "..", "public", "dm.html"));
+    res.sendFile(path.join(__dirname, "..", "public", filename));
     return;
   }
   res.status(401).send(`
@@ -125,6 +126,14 @@ app.get("/dm.html", (req, res) => {
       </body>
     </html>
   `);
+}
+
+app.get("/dm.html", (req, res) => {
+  serveDmPage(req, res, "dm.html");
+});
+
+app.get("/dm-echoing-mines.html", (req, res) => {
+  serveDmPage(req, res, "dm-echoing-mines.html");
 });
 
 app.post("/dm-auth", (req, res) => {
@@ -500,6 +509,179 @@ io.on("connection", (socket) => {
     }
   });
 });
+
+const minesNamespace = io.of("/echoing-mines");
+const MINES_DEFAULT_LEVEL = 1;
+let minesState = minesGame.createGame({
+  level: MINES_DEFAULT_LEVEL,
+  seed: DEFAULT_SEED,
+});
+
+function serializeMinesState(socket) {
+  return minesGame.serializeState(minesState, {
+    role: socket.data.role || "player",
+    socketId: socket.id,
+  });
+}
+
+function sendMinesState(socket) {
+  socket.emit("state", serializeMinesState(socket));
+}
+
+function broadcastMinesState() {
+  for (const socket of minesNamespace.sockets.values()) {
+    sendMinesState(socket);
+  }
+}
+
+function broadcastMinesAnnouncement(message) {
+  if (!message) {
+    return;
+  }
+  minesNamespace.emit("announcement", { message });
+}
+
+function notifyMinesTrap(message) {
+  for (const socket of minesNamespace.sockets.values()) {
+    if (socket.data.role === "dm") {
+      socket.emit("trapTriggered", { message });
+    }
+  }
+}
+
+minesNamespace.on("connection", (socket) => {
+  socket.data.role = "player";
+  sendMinesState(socket);
+
+  socket.on("register", (payload) => {
+    const requested = payload && payload.role === "dm" ? "dm" : "player";
+    socket.data.role = requested;
+    sendMinesState(socket);
+  });
+
+  socket.on("startGame", (payload) => {
+    if (socket.data.role !== "dm") {
+      return;
+    }
+    const level = Math.max(
+      1,
+      Number.parseInt(payload && payload.level, 10) || MINES_DEFAULT_LEVEL
+    );
+    const seed = Number.isInteger(payload && payload.seed) ? payload.seed : DEFAULT_SEED;
+    const preservedTokens = minesState.tokens.map((token) => ({
+      id: token.id,
+      name: token.name,
+      ownerId: token.ownerId,
+      gold: 0,
+      avatar: token.avatar,
+    }));
+    minesState = minesGame.createGame({
+      level,
+      seed,
+      tokens: preservedTokens,
+      tokenCount: preservedTokens.length,
+    });
+    broadcastMinesState();
+  });
+
+  socket.on("resetGame", () => {
+    if (socket.data.role !== "dm") {
+      return;
+    }
+    minesState = minesGame.resetLevel(minesState);
+    broadcastMinesState();
+  });
+
+  socket.on("moveToken", (payload) => {
+    const result = minesGame.applyMove(minesState, payload, {
+      role: socket.data.role || "player",
+      socketId: socket.id,
+      now: Date.now(),
+    });
+    if (!result.ok) {
+      if (result.announcement) {
+        broadcastMinesAnnouncement(result.announcement);
+      } else if (result.error) {
+        socket.emit("actionError", { message: result.error });
+      }
+      return;
+    }
+    if (result.trapTriggered) {
+      notifyMinesTrap(result.announcement || "A trap was triggered.");
+    }
+    if (result.announcement) {
+      broadcastMinesAnnouncement(result.announcement);
+    }
+    if (result.reachedExit) {
+      minesState = minesGame.advanceLevel(minesState);
+      broadcastMinesAnnouncement(`Exit reached. Descending to level ${minesState.level}.`);
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("setTokenName", (payload) => {
+    const result = minesGame.setTokenName(
+      minesState,
+      payload && payload.tokenId,
+      payload && payload.name,
+      socket.id,
+      socket.data.role || "player"
+    );
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("setTokenAvatar", (payload) => {
+    const result = minesGame.setTokenAvatar(
+      minesState,
+      payload && payload.tokenId,
+      payload && payload.avatar,
+      socket.id,
+      socket.data.role || "player"
+    );
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("resolveTrap", () => {
+    if (socket.data.role !== "dm") {
+      return;
+    }
+    if (!minesState.pendingTrap) {
+      return;
+    }
+    minesState.pendingTrap = null;
+    broadcastMinesState();
+  });
+
+  socket.on("disconnect", () => {
+    const changed = minesGame.releaseTokenOwnership(minesState, socket.id);
+    if (changed) {
+      broadcastMinesState();
+    }
+  });
+});
+
+const MINES_TICK_MS = 100;
+setInterval(() => {
+  const result = minesGame.updateMonsters(minesState, { now: Date.now() });
+  if (result.events && result.events.length > 0) {
+    result.events.forEach((event) => {
+      if (event.type === "announcement") {
+        broadcastMinesAnnouncement(event.message);
+      }
+    });
+  }
+  if (result.changed) {
+    broadcastMinesState();
+  }
+}, MINES_TICK_MS);
 
 server.listen(PORT, HOST, () => {
   console.log(`DnD minigames server running on http://${HOST}:${PORT}`);

@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Echoing Mines</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-role="player" class="mines">
+    <div class="page">
+      <header class="site-header">
+        <div class="title-group">
+          <p class="title-eyebrow">Cavern Puzzles</p>
+          <h1>Echoing Mines</h1>
+          <p class="subtitle">Listen for the monsters. Trust the numbers.</p>
+        </div>
+        <div class="header-actions">
+          <div class="header-verse">
+            Footsteps fade, the tunnels bend;<br />
+            Push the blocks and reach the end.<br />
+            A shimmer hides the hunter's face;<br />
+            Gold awaits in hollowed space.
+          </div>
+          <button class="reset-button" id="reset-game" type="button">RESET</button>
+          <div class="status" id="status">Connecting...</div>
+        </div>
+      </header>
+
+      <main id="mine-board" class="mine-board">
+        <section class="mine-panel">
+          <div class="mine-level" id="level-display">Level 1</div>
+          <div class="mine-roster" id="token-roster"></div>
+          <div class="mine-legend">
+            <div class="legend-title">Legend</div>
+            <div class="legend-grid">
+              <div class="legend-item"><span class="legend-chip chip-block">^ v &lt; &gt; ^v &lt;&gt; +</span> Arrow blocks (push directions)</div>
+              <div class="legend-item"><span class="legend-chip chip-number">1-8</span> Adjacent traps (numbers)</div>
+              <div class="legend-item"><span class="legend-chip chip-trap">X</span> Trap (reveals on trigger)</div>
+              <div class="legend-item"><span class="legend-chip chip-treasure">$</span> Treasure (adds gold)</div>
+              <div class="legend-item"><span class="legend-chip chip-exit">EXIT</span> Exit tile</div>
+              <div class="legend-item"><span class="legend-chip chip-start">START</span> Start zone (3x3)</div>
+              <div class="legend-item"><span class="legend-chip chip-fog">?</span> Fogged tile</div>
+              <div class="legend-item"><span class="legend-chip chip-monster">G Y R V</span> Monsters (green/yellow/red/violet)</div>
+            </div>
+          </div>
+        </section>
+        <section class="mine-grid-wrap">
+          <div id="mine-grid" class="mine-grid"></div>
+        </section>
+      </main>
+
+      <footer class="instructions" id="message-bar"></footer>
+    </div>
+
+    <div id="trap-overlay" class="trap-overlay hidden">
+      <div class="trap-burst"></div>
+      <div class="trap-message">Trap triggered! Await the DM.</div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/echoing-mines.js"></script>
+  </body>
+</html>
