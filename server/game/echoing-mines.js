@@ -310,7 +310,7 @@ function chooseTreasureValue(rng, distance, maxDistance) {
   return rollDice(rng, 3, 20);
 }
 
-function generateLevel({ level, seed, width, height }) {
+function generateLevelOnce({ level, seed, width, height }) {
   const rng = createRng(seed + level * 997);
   const tiles = buildGrid(width, height, createRockTile);
   const startArea = { x: 1, y: 1, size: START_SIZE };
@@ -324,6 +324,18 @@ function generateLevel({ level, seed, width, height }) {
 
   const mainPath = buildPath(startCenter, exit, width, height, rng);
   carvePath(tiles, mainPath);
+
+  const pathDirections = new Map();
+  for (let i = 0; i < mainPath.length - 1; i += 1) {
+    const from = mainPath[i];
+    const to = mainPath[i + 1];
+    const dir = DIRECTIONS.find(
+      (step) => step.dx === to.x - from.x && step.dy === to.y - from.y
+    );
+    if (dir) {
+      pathDirections.set(coordKey(from.x, from.y), dir.name);
+    }
+  }
 
   const rooms = buildRooms({
     tiles,
@@ -342,7 +354,8 @@ function generateLevel({ level, seed, width, height }) {
   const blockTargets = mainPath.filter(
     (pos) =>
       !isStartArea(pos.x, pos.y, startArea) &&
-      !(pos.x === exit.x && pos.y === exit.y)
+      !(pos.x === exit.x && pos.y === exit.y) &&
+      manhattan(pos, exit) > 1
   );
   shuffle(blockTargets, rng);
 
@@ -391,6 +404,10 @@ function generateLevel({ level, seed, width, height }) {
       } else {
         directions = ["up", "down"];
       }
+    }
+    const pathDir = pathDirections.get(coordKey(pos.x, pos.y));
+    if (pathDir && !directions.includes(pathDir)) {
+      directions.push(pathDir);
     }
 
     tiles[pos.y][pos.x] = {
@@ -611,6 +628,109 @@ function generateLevel({ level, seed, width, height }) {
   };
 }
 
+function canPushChainForPath(tiles, width, height, x, y, dir) {
+  let cx = x;
+  let cy = y;
+  while (true) {
+    const tile = tiles[cy][cx];
+    if (tile.type !== "block") {
+      break;
+    }
+    if (!tile.directions || !tile.directions.includes(dir.name)) {
+      return false;
+    }
+    const nx = cx + dir.dx;
+    const ny = cy + dir.dy;
+    if (!inBounds(nx, ny, width, height)) {
+      return false;
+    }
+    cx = nx;
+    cy = ny;
+  }
+  const destTile = tiles[cy][cx];
+  if (destTile.type === "rock" || destTile.type === "exit" || destTile.type === "trap") {
+    return false;
+  }
+  if (destTile.type === "block") {
+    return false;
+  }
+  return true;
+}
+
+function estimateMinPushes({ tiles, width, height, startArea, exit }) {
+  const dist = buildGrid(width, height, () => Infinity);
+  const deque = [];
+
+  for (let y = startArea.y; y < startArea.y + startArea.size; y += 1) {
+    for (let x = startArea.x; x < startArea.x + startArea.size; x += 1) {
+      dist[y][x] = 0;
+      deque.push({ x, y });
+    }
+  }
+
+  while (deque.length > 0) {
+    const current = deque.shift();
+    const currentDist = dist[current.y][current.x];
+    if (current.x === exit.x && current.y === exit.y) {
+      return currentDist;
+    }
+    for (const dir of DIRECTIONS) {
+      const nx = current.x + dir.dx;
+      const ny = current.y + dir.dy;
+      if (!inBounds(nx, ny, width, height)) {
+        continue;
+      }
+      const tile = tiles[ny][nx];
+      if (tile.type === "rock") {
+        continue;
+      }
+      let cost = 0;
+      if (tile.type === "block") {
+        if (!canPushChainForPath(tiles, width, height, nx, ny, dir)) {
+          continue;
+        }
+        cost = 1;
+      }
+      const nextDist = currentDist + cost;
+      if (nextDist < dist[ny][nx]) {
+        dist[ny][nx] = nextDist;
+        if (cost === 0) {
+          deque.unshift({ x: nx, y: ny });
+        } else {
+          deque.push({ x: nx, y: ny });
+        }
+      }
+    }
+  }
+
+  return Infinity;
+}
+
+function generateLevel({ level, seed, width, height }) {
+  const targetPushes = 2 * level;
+  const maxAttempts = 120;
+  let bestCandidate = null;
+  let bestPushes = -Infinity;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const attemptSeed = seed + attempt * 173;
+    const generated = generateLevelOnce({
+      level,
+      seed: attemptSeed,
+      width,
+      height,
+    });
+    const minPushes = estimateMinPushes(generated);
+    if (Number.isFinite(minPushes) && minPushes > bestPushes) {
+      bestPushes = minPushes;
+      bestCandidate = generated;
+    }
+    if (Number.isFinite(minPushes) && minPushes >= targetPushes) {
+      return generated;
+    }
+  }
+  return bestCandidate || generateLevelOnce({ level, seed, width, height });
+}
+
 function createTokens({ tokens, tokenCount, startArea }) {
   const positions = getTokenStartPositions(startArea, tokens ? tokens.length : tokenCount);
   if (tokens && tokens.length > 0) {
@@ -828,54 +948,207 @@ function pushPlayerAway(state, player, dir) {
 function tryPushBlock(state, blockPos, dir, options = {}) {
   const requireUncovered = Boolean(options.requireUncovered);
   const dryRun = Boolean(options.dryRun);
-  const blockTile = state.tiles[blockPos.y][blockPos.x];
-  if (blockTile.type !== "block") {
+  const allowPushPlayer = Boolean(options.allowPushPlayer);
+  const originTile = state.tiles[blockPos.y][blockPos.x];
+  if (originTile.type !== "block") {
     return { ok: false };
   }
-  if (!blockTile.directions || !blockTile.directions.includes(dir.name)) {
+  if (!originTile.directions || !originTile.directions.includes(dir.name)) {
     return { ok: false, error: "That block will not move that way." };
   }
-  const destX = blockPos.x + dir.dx;
-  const destY = blockPos.y + dir.dy;
-  if (!inBounds(destX, destY, state.width, state.height)) {
-    return { ok: false, error: "That block cannot move there." };
+
+  const blocks = [];
+  let cursor = { x: blockPos.x, y: blockPos.y };
+  while (true) {
+    const tile = state.tiles[cursor.y][cursor.x];
+    if (tile.type !== "block") {
+      break;
+    }
+    if (!tile.directions || !tile.directions.includes(dir.name)) {
+      return { ok: false, error: "That block will not move that way." };
+    }
+    blocks.push({ x: cursor.x, y: cursor.y, directions: tile.directions });
+    const next = { x: cursor.x + dir.dx, y: cursor.y + dir.dy };
+    if (!inBounds(next.x, next.y, state.width, state.height)) {
+      return { ok: false, error: "That block cannot move there." };
+    }
+    cursor = next;
   }
-  const destTile = state.tiles[destY][destX];
-  if (requireUncovered && !destTile.uncovered) {
+
+  const startPos = cursor;
+  const startTile = state.tiles[startPos.y][startPos.x];
+  if (requireUncovered && !startTile.uncovered) {
     return { ok: false, error: "That block needs clear ground ahead." };
   }
-  if (destTile.type !== "empty") {
+  if (
+    startTile.type === "rock" ||
+    startTile.type === "exit" ||
+    startTile.type === "trap" ||
+    startTile.type === "block"
+  ) {
     return { ok: false, error: "That block cannot move there." };
   }
-  if (findMonsterAt(state, destX, destY)) {
-    return { ok: false, error: "That block cannot move there." };
-  }
-  const player = findTokenAt(state, destX, destY);
+
+  const blockDestUncovered = blocks.map((block) => {
+    const destX = block.x + dir.dx;
+    const destY = block.y + dir.dy;
+    return state.tiles[destY][destX].uncovered;
+  });
+
   let pushedPlayer = false;
-  if (player && options.allowPushPlayer) {
-    const pushTarget = findPushDestination(state, player, dir);
+  let playerToPush = null;
+  const occupyingPlayer = findTokenAt(state, startPos.x, startPos.y);
+  if (occupyingPlayer) {
+    if (!allowPushPlayer) {
+      return { ok: false, error: "That block cannot move there." };
+    }
+    const pushTarget = findPushDestination(state, occupyingPlayer, dir);
     if (!pushTarget) {
       return { ok: false, error: "That block cannot move there." };
     }
-    if (!dryRun) {
-      pushPlayerAway(state, player, dir);
-    }
     pushedPlayer = true;
-  } else if (player) {
-    return { ok: false, error: "That block cannot move there." };
+    playerToPush = occupyingPlayer;
+  }
+
+  const line = [];
+  const lineUncovered = [];
+  let emptyIndex = -1;
+  let destroyIndex = -1;
+  let destroyTreasure = false;
+  let destroyMonster = false;
+
+  if (playerToPush) {
+    line.push({ x: startPos.x, y: startPos.y, tile: startTile, monster: null });
+    lineUncovered.push(startTile.uncovered);
+    emptyIndex = 0;
+  } else {
+    let scan = { x: startPos.x, y: startPos.y };
+    while (true) {
+      if (!inBounds(scan.x, scan.y, state.width, state.height)) {
+        break;
+      }
+      const tile = state.tiles[scan.y][scan.x];
+      if (
+        tile.type === "rock" ||
+        tile.type === "exit" ||
+        tile.type === "trap" ||
+        tile.type === "block"
+      ) {
+        break;
+      }
+      const player = findTokenAt(state, scan.x, scan.y);
+      if (player) {
+        return { ok: false, error: "That block cannot move there." };
+      }
+      const monster = findMonsterAt(state, scan.x, scan.y);
+      line.push({ x: scan.x, y: scan.y, tile, monster });
+      lineUncovered.push(tile.uncovered);
+      if (tile.type === "empty" && !monster) {
+        emptyIndex = line.length - 1;
+        break;
+      }
+      scan = { x: scan.x + dir.dx, y: scan.y + dir.dy };
+    }
+  }
+
+  if (emptyIndex === -1) {
+    for (let i = line.length - 1; i >= 0; i -= 1) {
+      if (line[i].tile.type === "treasure") {
+        destroyIndex = i;
+        destroyTreasure = true;
+        if (line[i].monster) {
+          destroyMonster = true;
+        }
+        break;
+      }
+    }
+    if (destroyIndex === -1) {
+      for (let i = line.length - 1; i >= 0; i -= 1) {
+        if (line[i].monster) {
+          destroyIndex = i;
+          destroyMonster = true;
+          break;
+        }
+      }
+    }
+    if (destroyIndex === -1) {
+      return { ok: false, error: "That block cannot move there." };
+    }
+    emptyIndex = destroyIndex;
   }
 
   if (dryRun) {
-    return { ok: true, destX, destY, pushedPlayer };
+    return { ok: true, pushedPlayer };
   }
 
-  state.tiles[destY][destX] = {
-    type: "block",
-    uncovered: destTile.uncovered,
-    directions: blockTile.directions,
-  };
-  state.tiles[blockPos.y][blockPos.x] = createEmptyTile();
-  state.tiles[blockPos.y][blockPos.x].uncovered = true;
+  if (playerToPush) {
+    pushPlayerAway(state, playerToPush, dir);
+  }
+
+  if (destroyIndex >= 0 && destroyMonster) {
+    const targetMonster = line[destroyIndex] && line[destroyIndex].monster;
+    if (targetMonster) {
+      state.monsters = state.monsters.filter((monster) => monster.id !== targetMonster.id);
+    }
+  }
+
+  if (line.length > 0) {
+    const occupants = line.map((entry) => ({
+      treasure:
+        entry.tile.type === "treasure" ? { value: entry.tile.value } : null,
+      monster: entry.monster || null,
+    }));
+
+    if (destroyIndex >= 0) {
+      if (destroyTreasure) {
+        occupants[destroyIndex].treasure = null;
+      }
+      if (destroyMonster) {
+        occupants[destroyIndex].monster = null;
+      }
+    }
+
+    for (let i = emptyIndex; i >= 1; i -= 1) {
+      const source = occupants[i - 1];
+      const dest = line[i];
+      const destUncovered = lineUncovered[i];
+      if (source.treasure) {
+        state.tiles[dest.y][dest.x] = {
+          type: "treasure",
+          uncovered: destUncovered,
+          value: source.treasure.value,
+        };
+      } else {
+        state.tiles[dest.y][dest.x] = {
+          type: "empty",
+          uncovered: destUncovered,
+        };
+      }
+      if (source.monster) {
+        source.monster.x = dest.x;
+        source.monster.y = dest.y;
+      }
+    }
+
+    const startUncovered = lineUncovered[0];
+    state.tiles[startPos.y][startPos.x] = {
+      type: "empty",
+      uncovered: startUncovered,
+    };
+  }
+
+  for (let i = blocks.length - 1; i >= 0; i -= 1) {
+    const block = blocks[i];
+    const destX = block.x + dir.dx;
+    const destY = block.y + dir.dy;
+    state.tiles[destY][destX] = {
+      type: "block",
+      uncovered: blockDestUncovered[i],
+      directions: block.directions,
+    };
+  }
+  state.tiles[blocks[0].y][blocks[0].x] = createEmptyTile();
+  state.tiles[blocks[0].y][blocks[0].x].uncovered = true;
   return { ok: true, pushedPlayer };
 }
 

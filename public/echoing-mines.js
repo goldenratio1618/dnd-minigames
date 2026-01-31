@@ -26,6 +26,31 @@
   let editingDraft = "";
   let dragTokenId = null;
   let dragFrom = null;
+  let selectedTokenId = null;
+
+  const DIRECTION_ORDER = ["up", "right", "down", "left"];
+  const MOVE_DIRECTIONS = [
+    { name: "up", dx: 0, dy: -1 },
+    { name: "down", dx: 0, dy: 1 },
+    { name: "left", dx: -1, dy: 0 },
+    { name: "right", dx: 1, dy: 0 },
+  ];
+
+  function normalizeDirections(directions) {
+    const set = new Set(directions || []);
+    return DIRECTION_ORDER.filter((dir) => set.has(dir));
+  }
+
+  function createArrowIcon(direction) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.classList.add("block-arrow", `block-arrow-${direction}`);
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", "M12 3l5.5 5.5h-3.6v11h-3.8v-11H6.5z");
+    svg.appendChild(path);
+    return svg;
+  }
 
   function readImageFile(file) {
     return new Promise((resolve, reject) => {
@@ -140,6 +165,13 @@
     return Array.from(set)
       .map((dir) => map[dir] || "?")
       .join("");
+  }
+
+  function canControlToken(token) {
+    if (isDM) {
+      return true;
+    }
+    return !token.owned || token.ownedBySelf;
   }
 
   function canEditToken(token) {
@@ -334,7 +366,33 @@
           cell.classList.add(`cell-${tile.type}`);
           let content = "";
           if (tile.type === "block") {
-            content = formatBlockDirections(tile.directions);
+            const directions = normalizeDirections(tile.directions);
+            if (directions.length > 0) {
+              const arrows = document.createElement("div");
+              arrows.className = "block-arrows";
+              arrows.dataset.count = String(directions.length);
+              if (
+                directions.length === 2 &&
+                directions.includes("up") &&
+                directions.includes("down")
+              ) {
+                arrows.classList.add("block-arrows-vertical");
+              } else if (
+                directions.length === 2 &&
+                directions.includes("left") &&
+                directions.includes("right")
+              ) {
+                arrows.classList.add("block-arrows-horizontal");
+              } else if (directions.length === 4) {
+                arrows.classList.add("block-arrows-quad");
+              }
+              directions.forEach((dir) => {
+                arrows.appendChild(createArrowIcon(dir));
+              });
+              cell.appendChild(arrows);
+            } else {
+              content = "?";
+            }
           } else if (tile.type === "trap") {
             content = "X";
           } else if (tile.type === "treasure") {
@@ -365,6 +423,7 @@
           tokenMap.get(tokenKey).forEach((token) => {
             const tokenEl = document.createElement("div");
             tokenEl.className = "token-marker";
+            tokenEl.dataset.tokenId = token.id;
             if (token.avatar) {
               tokenEl.classList.add("token-has-avatar");
               tokenEl.style.backgroundImage = `url("${token.avatar}")`;
@@ -377,6 +436,17 @@
               !isFrozen() && (isDM || token.ownedBySelf || !token.owned);
             tokenEl.draggable = draggable;
             if (draggable) {
+              tokenEl.addEventListener("click", () => {
+                if (isFrozen()) {
+                  return;
+                }
+                if (!canControlToken(token)) {
+                  setMessage("That token belongs to someone else.");
+                  return;
+                }
+                selectedTokenId = token.id;
+                renderGrid();
+              });
               tokenEl.addEventListener("dragstart", (event) => {
                 dragTokenId = token.id;
                 dragFrom = { x: token.x, y: token.y };
@@ -389,6 +459,9 @@
               });
             } else {
               tokenEl.classList.add("token-locked");
+            }
+            if (token.id === selectedTokenId) {
+              tokenEl.classList.add("token-selected");
             }
             tokenWrap.appendChild(tokenEl);
           });
@@ -447,15 +520,72 @@
           dragFrom = null;
         });
 
+        cell.addEventListener("click", (event) => {
+          if (event.target && event.target.closest(".token-marker")) {
+            return;
+          }
+          if (selectedTokenId) {
+            selectedTokenId = null;
+            renderGrid();
+          }
+        });
+
         gridEl.appendChild(cell);
       });
     });
+  }
+
+  function syncSelectedToken() {
+    if (!state || !selectedTokenId) {
+      return;
+    }
+    const token = state.tokens.find((entry) => entry.id === selectedTokenId);
+    if (!token || !canControlToken(token)) {
+      selectedTokenId = null;
+    }
+  }
+
+  function tryKeyboardMove(directionName) {
+    if (!state || !selectedTokenId || isFrozen()) {
+      return;
+    }
+    const token = state.tokens.find((entry) => entry.id === selectedTokenId);
+    if (!token) {
+      selectedTokenId = null;
+      return;
+    }
+    if (!canControlToken(token)) {
+      return;
+    }
+    const dir = MOVE_DIRECTIONS.find((entry) => entry.name === directionName);
+    if (!dir) {
+      return;
+    }
+    const target = { x: token.x + dir.dx, y: token.y + dir.dy };
+    if (!state.tiles[target.y] || !state.tiles[target.y][target.x]) {
+      return;
+    }
+    const targetTile = state.tiles[target.y][target.x];
+    if (targetTile.type === "rock") {
+      return;
+    }
+    if (
+      targetTile.type === "block" &&
+      (!targetTile.directions || !targetTile.directions.includes(directionName))
+    ) {
+      return;
+    }
+    if (state.tokens.some((entry) => entry.id !== token.id && entry.x === target.x && entry.y === target.y)) {
+      return;
+    }
+    socket.emit("moveToken", { tokenId: token.id, to: target });
   }
 
   function render() {
     if (!state) {
       return;
     }
+    syncSelectedToken();
     renderRoster();
     renderGrid();
     updateFrozenState();
@@ -500,6 +630,33 @@
     if (isDM && payload && payload.message) {
       setMessage(payload.message);
     }
+  });
+
+  window.addEventListener("keydown", (event) => {
+    if (editingTokenId) {
+      return;
+    }
+    const target = event.target;
+    if (
+      target &&
+      (target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable)
+    ) {
+      return;
+    }
+    const keyMap = {
+      ArrowUp: "up",
+      ArrowDown: "down",
+      ArrowLeft: "left",
+      ArrowRight: "right",
+    };
+    const direction = keyMap[event.key];
+    if (!direction) {
+      return;
+    }
+    event.preventDefault();
+    tryKeyboardMove(direction);
   });
 
   if (isDM && dmTrapConfirm) {
