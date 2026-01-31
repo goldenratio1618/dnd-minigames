@@ -488,12 +488,24 @@ io.on("connection", (socket) => {
     const excluded = solverState.freeCellCardIds;
     const eligible = Object.keys(state.cardsById).filter((cardId) => !excluded.has(cardId));
     const targetCount = Math.min(state.trapCount, eligible.length);
-    shuffle(eligible);
+    const nonAces = [];
+    const aces = [];
+    eligible.forEach((cardId) => {
+      const card = state.cardsById[cardId];
+      if (card && card.value === 1) {
+        aces.push(cardId);
+      } else {
+        nonAces.push(cardId);
+      }
+    });
+    shuffle(nonAces);
+    shuffle(aces);
+    const prioritizedEligible = nonAces.concat(aces);
 
     Object.values(state.cardsById).forEach((card) => {
       card.trapId = null;
     });
-    eligible.slice(0, targetCount).forEach((cardId, index) => {
+    prioritizedEligible.slice(0, targetCount).forEach((cardId, index) => {
       state.cardsById[cardId].trapId = index + 1;
     });
     state.trapCount = targetCount;
