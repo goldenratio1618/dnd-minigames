@@ -751,7 +751,15 @@ function buildBlockList(tiles) {
   return blocks;
 }
 
-function estimateMinPushes({ tiles, width, height, startArea, exit, maxPushes = Infinity }) {
+function estimateMinPushes({
+  tiles,
+  width,
+  height,
+  startArea,
+  exit,
+  maxPushes = Infinity,
+  requireSolution = false,
+} = {}) {
   const blocks = buildBlockList(tiles);
   const blockPositions = blocks.map((block) => block.y * width + block.x);
   const exitIndex = exit.y * width + exit.x;
@@ -793,7 +801,7 @@ function estimateMinPushes({ tiles, width, height, startArea, exit, maxPushes = 
     if (current.playerIndex === exitIndex) {
       return currentDist;
     }
-    if (maxPushesLimit !== null && currentDist > maxPushesLimit) {
+    if (!requireSolution && maxPushesLimit !== null && currentDist > maxPushesLimit) {
       return maxPushesLimit + 1;
     }
 
@@ -875,7 +883,7 @@ function estimateMinPushes({ tiles, width, height, startArea, exit, maxPushes = 
       });
       const nextKey = stateKey(nextIndex, updated);
       const nextDist = currentDist + 1;
-      if (maxPushesLimit !== null && nextDist > maxPushesLimit) {
+      if (!requireSolution && maxPushesLimit !== null && nextDist > maxPushesLimit) {
         continue;
       }
       if (!dist.has(nextKey) || nextDist < dist.get(nextKey)) {
@@ -885,7 +893,7 @@ function estimateMinPushes({ tiles, width, height, startArea, exit, maxPushes = 
     }
   }
 
-  if (maxPushesLimit !== null) {
+  if (!requireSolution && maxPushesLimit !== null) {
     return maxPushesLimit + 1;
   }
   return Infinity;
@@ -905,13 +913,23 @@ function generateLevel({ level, seed, width, height }) {
       width,
       height,
     });
-    const minPushes = estimateMinPushes({ ...generated, maxPushes: targetPushes });
+    const quickPushes = estimateMinPushes({
+      ...generated,
+      maxPushes: targetPushes,
+    });
     const hasMobility = monstersHaveMobility(generated, minMonsterTiles);
-    if (Number.isFinite(minPushes) && hasMobility && minPushes > bestPushes) {
-      bestPushes = minPushes;
+    let confirmedPushes = quickPushes;
+    if (hasMobility && quickPushes > targetPushes) {
+      confirmedPushes = estimateMinPushes({
+        ...generated,
+        requireSolution: true,
+      });
+    }
+    if (Number.isFinite(confirmedPushes) && hasMobility && confirmedPushes > bestPushes) {
+      bestPushes = confirmedPushes;
       bestCandidate = generated;
     }
-    if (Number.isFinite(minPushes) && minPushes >= targetPushes && hasMobility) {
+    if (Number.isFinite(confirmedPushes) && confirmedPushes >= targetPushes && hasMobility) {
       return generated;
     }
   }
