@@ -751,10 +751,11 @@ function buildBlockList(tiles) {
   return blocks;
 }
 
-function estimateMinPushes({ tiles, width, height, startArea, exit }) {
+function estimateMinPushes({ tiles, width, height, startArea, exit, maxPushes = Infinity }) {
   const blocks = buildBlockList(tiles);
   const blockPositions = blocks.map((block) => block.y * width + block.x);
   const exitIndex = exit.y * width + exit.x;
+  const maxPushesLimit = Number.isFinite(maxPushes) ? maxPushes : null;
 
   const isWall = (x, y) => tiles[y][x].type === "rock";
   const isBlockedForBlock = (x, y) => {
@@ -791,6 +792,9 @@ function estimateMinPushes({ tiles, width, height, startArea, exit }) {
     }
     if (current.playerIndex === exitIndex) {
       return currentDist;
+    }
+    if (maxPushesLimit !== null && currentDist > maxPushesLimit) {
+      return maxPushesLimit + 1;
     }
 
     const blockMap = new Map();
@@ -871,6 +875,9 @@ function estimateMinPushes({ tiles, width, height, startArea, exit }) {
       });
       const nextKey = stateKey(nextIndex, updated);
       const nextDist = currentDist + 1;
+      if (maxPushesLimit !== null && nextDist > maxPushesLimit) {
+        continue;
+      }
       if (!dist.has(nextKey) || nextDist < dist.get(nextKey)) {
         dist.set(nextKey, nextDist);
         heap.push({ priority: nextDist, playerIndex: nextIndex, positions: updated });
@@ -878,6 +885,9 @@ function estimateMinPushes({ tiles, width, height, startArea, exit }) {
     }
   }
 
+  if (maxPushesLimit !== null) {
+    return maxPushesLimit + 1;
+  }
   return Infinity;
 }
 
@@ -895,7 +905,7 @@ function generateLevel({ level, seed, width, height }) {
       width,
       height,
     });
-    const minPushes = estimateMinPushes(generated);
+    const minPushes = estimateMinPushes({ ...generated, maxPushes: targetPushes });
     const hasMobility = monstersHaveMobility(generated, minMonsterTiles);
     if (Number.isFinite(minPushes) && hasMobility && minPushes > bestPushes) {
       bestPushes = minPushes;
