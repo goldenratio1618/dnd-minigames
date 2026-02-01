@@ -1175,6 +1175,7 @@ body.loaded .mine-board {
   box-shadow: 0 2px 6px var(--shadow);
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
 }
 
 .token-marker.token-has-avatar {
@@ -1200,19 +1201,19 @@ body.loaded .mine-board {
 }
 
 .monster-green {
-  background: rgba(224, 194, 124, 0.88);
+  background-color: rgba(224, 194, 124, 0.88);
 }
 
 .monster-yellow {
-  background: rgba(224, 194, 124, 0.88);
+  background-color: rgba(224, 194, 124, 0.88);
 }
 
 .monster-red {
-  background: rgba(224, 194, 124, 0.88);
+  background-color: rgba(224, 194, 124, 0.88);
 }
 
 .monster-violet {
-  background: rgba(224, 194, 124, 0.88);
+  background-color: rgba(224, 194, 124, 0.88);
 }
 
 .monster-marker.monster-has-avatar {
