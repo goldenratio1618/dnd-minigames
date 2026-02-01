@@ -1200,19 +1200,19 @@ body.loaded .mine-board {
 }
 
 .monster-green {
-  background: var(--monster-green);
+  background: rgba(224, 194, 124, 0.88);
 }
 
 .monster-yellow {
-  background: var(--monster-yellow);
+  background: rgba(224, 194, 124, 0.88);
 }
 
 .monster-red {
-  background: var(--monster-red);
+  background: rgba(224, 194, 124, 0.88);
 }
 
 .monster-violet {
-  background: var(--monster-violet);
+  background: rgba(224, 194, 124, 0.88);
 }
 
 .monster-marker.monster-has-avatar {

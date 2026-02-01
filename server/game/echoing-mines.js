@@ -757,6 +757,10 @@ function estimateMinPushes({ tiles, width, height, startArea, exit }) {
   const exitIndex = exit.y * width + exit.x;
 
   const isWall = (x, y) => tiles[y][x].type === "rock";
+  const isBlockedForBlock = (x, y) => {
+    const type = tiles[y][x].type;
+    return type === "rock" || type === "trap" || type === "exit";
+  };
 
   const stateKey = (playerIndex, positions) =>
     `${playerIndex}|${positions.join(",")}`;
@@ -848,7 +852,7 @@ function estimateMinPushes({ tiles, width, height, startArea, exit }) {
       if (!inBounds(cx, cy, width, height)) {
         continue;
       }
-      if (isWall(cx, cy)) {
+      if (isBlockedForBlock(cx, cy)) {
         continue;
       }
       if (cx === exit.x && cy === exit.y) {
