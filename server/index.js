@@ -553,6 +553,13 @@ function broadcastMinesAnnouncement(message) {
   minesNamespace.emit("announcement", { message });
 }
 
+function broadcastMinesSound(id) {
+  if (!id) {
+    return;
+  }
+  minesNamespace.emit("sound", { id });
+}
+
 function notifyMinesTrap(message) {
   for (const socket of minesNamespace.sockets.values()) {
     if (socket.data.role === "dm") {
@@ -586,12 +593,14 @@ minesNamespace.on("connection", (socket) => {
       ownerId: token.ownerId,
       gold: 0,
       avatar: token.avatar,
+      initiativeMod: token.initiativeMod,
     }));
     minesState = minesGame.createGame({
       level,
       seed,
       tokens: preservedTokens,
       tokenCount: preservedTokens.length,
+      monsterConfig: minesState.monsterConfig,
     });
     broadcastMinesState();
   });
@@ -624,9 +633,35 @@ minesNamespace.on("connection", (socket) => {
     if (result.announcement) {
       broadcastMinesAnnouncement(result.announcement);
     }
+    if (result.sounds && result.sounds.length > 0) {
+      result.sounds.forEach((id) => broadcastMinesSound(id));
+    }
     if (result.reachedExit) {
       minesState = minesGame.advanceLevel(minesState);
       broadcastMinesAnnouncement(`Exit reached. Descending to level ${minesState.level}.`);
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("moveMonster", (payload) => {
+    const result = minesGame.applyMonsterMove(minesState, payload, {
+      role: socket.data.role || "player",
+      socketId: socket.id,
+      now: Date.now(),
+    });
+    if (!result.ok) {
+      if (result.announcement) {
+        broadcastMinesAnnouncement(result.announcement);
+      } else if (result.error) {
+        socket.emit("actionError", { message: result.error });
+      }
+      return;
+    }
+    if (result.announcement) {
+      broadcastMinesAnnouncement(result.announcement);
+    }
+    if (result.sounds && result.sounds.length > 0) {
+      result.sounds.forEach((id) => broadcastMinesSound(id));
     }
     broadcastMinesState();
   });
@@ -654,6 +689,126 @@ minesNamespace.on("connection", (socket) => {
       socket.id,
       socket.data.role || "player"
     );
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("setTokenInitiativeMod", (payload) => {
+    const result = minesGame.setTokenInitiativeMod(
+      minesState,
+      payload && payload.tokenId,
+      payload && payload.initiativeMod,
+      socket.id,
+      socket.data.role || "player"
+    );
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("setMonsterConfig", (payload) => {
+    const result = minesGame.setMonsterConfig(
+      minesState,
+      payload && payload.type,
+      payload,
+      socket.data.role || "player"
+    );
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("setCombatInitiative", (payload) => {
+    const result = minesGame.setCombatInitiative(
+      minesState,
+      payload && payload.entryId,
+      payload && payload.initiative,
+      socket.id,
+      socket.data.role || "player"
+    );
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("resortCombat", () => {
+    const result = minesGame.resortCombat(minesState, socket.data.role || "player");
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("advanceCombat", () => {
+    const result = minesGame.advanceCombatTurn(minesState, socket.data.role || "player", {
+      direction: 1,
+    });
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    if (result.events && result.events.length > 0) {
+      result.events.forEach((event) => {
+        if (event.type === "announcement") {
+          broadcastMinesAnnouncement(event.message);
+        }
+      });
+    }
+    if (result.sounds && result.sounds.length > 0) {
+      result.sounds.forEach((id) => broadcastMinesSound(id));
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("retreatCombat", () => {
+    const result = minesGame.advanceCombatTurn(minesState, socket.data.role || "player", {
+      direction: -1,
+    });
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("addMonsterToCombat", (payload) => {
+    const result = minesGame.addMonsterToCombat(
+      minesState,
+      payload && payload.monsterId,
+      socket.data.role || "player"
+    );
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("deleteMonster", (payload) => {
+    const result = minesGame.deleteMonster(
+      minesState,
+      payload && payload.monsterId,
+      socket.data.role || "player"
+    );
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("exitCombat", () => {
+    const result = minesGame.exitCombat(minesState, socket.data.role || "player");
     if (!result.ok) {
       socket.emit("actionError", { message: result.error });
       return;
@@ -689,6 +844,9 @@ setInterval(() => {
         broadcastMinesAnnouncement(event.message);
       }
     });
+  }
+  if (result.sounds && result.sounds.length > 0) {
+    result.sounds.forEach((id) => broadcastMinesSound(id));
   }
   if (result.changed) {
     broadcastMinesState();

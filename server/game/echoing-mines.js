@@ -9,6 +9,8 @@ const VIOLET_MIN_SPEED = 0.5;
 const VIOLET_MAX_SPEED = 6;
 const VIOLET_FAR_DISTANCE = 12;
 
+const MONSTER_TYPES = ["green", "yellow", "red", "violet"];
+
 const DIRECTIONS = [
   { name: "up", dx: 0, dy: -1 },
   { name: "down", dx: 0, dy: 1 },
@@ -31,6 +33,25 @@ const MONSTER_HIT_MESSAGES = {
   red: "A red hunter cuts a straight line to blood!",
   violet: "A violet stalker steps from the shadows!",
 };
+
+const DEFAULT_MONSTER_CONFIG = {
+  green: { avatar: "/monsters/green-construct.png", initiativeMod: 0 },
+  yellow: { avatar: "/monsters/yellow-construct.png", initiativeMod: 0 },
+  red: { avatar: "/monsters/red-undead.png", initiativeMod: 0 },
+  violet: { avatar: "/monsters/violet-beast.png", initiativeMod: 0 },
+};
+
+function normalizeMonsterConfig(config) {
+  const normalized = {};
+  MONSTER_TYPES.forEach((type) => {
+    const entry = config && config[type] ? config[type] : DEFAULT_MONSTER_CONFIG[type] || {};
+    normalized[type] = {
+      avatar: typeof entry.avatar === "string" ? entry.avatar : "",
+      initiativeMod: Number.isFinite(entry.initiativeMod) ? entry.initiativeMod : 0,
+    };
+  });
+  return normalized;
+}
 
 function createRng(seed) {
   let value = Number.isInteger(seed) ? seed : 42;
@@ -628,77 +649,227 @@ function generateLevelOnce({ level, seed, width, height }) {
   };
 }
 
-function canPushChainForPath(tiles, width, height, x, y, dir) {
-  let cx = x;
-  let cy = y;
-  while (true) {
-    const tile = tiles[cy][cx];
-    if (tile.type !== "block") {
-      break;
-    }
-    if (!tile.directions || !tile.directions.includes(dir.name)) {
-      return false;
-    }
-    const nx = cx + dir.dx;
-    const ny = cy + dir.dy;
-    if (!inBounds(nx, ny, width, height)) {
-      return false;
-    }
-    cx = nx;
-    cy = ny;
+function countMonsterReachableTiles(tiles, width, height, start) {
+  const startTile = tiles[start.y][start.x];
+  if (!canMonsterMoveInto(startTile)) {
+    return 0;
   }
-  const destTile = tiles[cy][cx];
-  if (destTile.type === "rock" || destTile.type === "exit" || destTile.type === "trap") {
-    return false;
-  }
-  if (destTile.type === "block") {
-    return false;
-  }
-  return true;
-}
-
-function estimateMinPushes({ tiles, width, height, startArea, exit }) {
-  const dist = buildGrid(width, height, () => Infinity);
-  const deque = [];
-
-  for (let y = startArea.y; y < startArea.y + startArea.size; y += 1) {
-    for (let x = startArea.x; x < startArea.x + startArea.size; x += 1) {
-      dist[y][x] = 0;
-      deque.push({ x, y });
-    }
-  }
-
-  while (deque.length > 0) {
-    const current = deque.shift();
-    const currentDist = dist[current.y][current.x];
-    if (current.x === exit.x && current.y === exit.y) {
-      return currentDist;
-    }
+  const visited = new Set([coordKey(start.x, start.y)]);
+  const queue = [{ x: start.x, y: start.y }];
+  while (queue.length > 0) {
+    const current = queue.shift();
     for (const dir of DIRECTIONS) {
       const nx = current.x + dir.dx;
       const ny = current.y + dir.dy;
       if (!inBounds(nx, ny, width, height)) {
         continue;
       }
-      const tile = tiles[ny][nx];
-      if (tile.type === "rock") {
+      const key = coordKey(nx, ny);
+      if (visited.has(key)) {
         continue;
       }
-      let cost = 0;
-      if (tile.type === "block") {
-        if (!canPushChainForPath(tiles, width, height, nx, ny, dir)) {
-          continue;
-        }
-        cost = 1;
+      const tile = tiles[ny][nx];
+      if (!canMonsterMoveInto(tile)) {
+        continue;
       }
-      const nextDist = currentDist + cost;
-      if (nextDist < dist[ny][nx]) {
-        dist[ny][nx] = nextDist;
-        if (cost === 0) {
-          deque.unshift({ x: nx, y: ny });
-        } else {
-          deque.push({ x: nx, y: ny });
+      visited.add(key);
+      queue.push({ x: nx, y: ny });
+    }
+  }
+  return visited.size;
+}
+
+function monstersHaveMobility(state, minTiles) {
+  return state.monsters.every(
+    (monster) =>
+      countMonsterReachableTiles(state.tiles, state.width, state.height, monster) >= minTiles
+  );
+}
+
+class MinHeap {
+  constructor() {
+    this.data = [];
+  }
+
+  push(item) {
+    this.data.push(item);
+    let index = this.data.length - 1;
+    while (index > 0) {
+      const parent = Math.floor((index - 1) / 2);
+      if (this.data[parent].priority <= item.priority) {
+        break;
+      }
+      this.data[index] = this.data[parent];
+      index = parent;
+    }
+    this.data[index] = item;
+  }
+
+  pop() {
+    if (this.data.length === 0) {
+      return null;
+    }
+    const root = this.data[0];
+    const last = this.data.pop();
+    if (this.data.length > 0) {
+      this.data[0] = last;
+      let index = 0;
+      while (true) {
+        const left = index * 2 + 1;
+        const right = index * 2 + 2;
+        let smallest = index;
+        if (left < this.data.length && this.data[left].priority < this.data[smallest].priority) {
+          smallest = left;
         }
+        if (right < this.data.length && this.data[right].priority < this.data[smallest].priority) {
+          smallest = right;
+        }
+        if (smallest === index) {
+          break;
+        }
+        [this.data[index], this.data[smallest]] = [this.data[smallest], this.data[index]];
+        index = smallest;
+      }
+    }
+    return root;
+  }
+
+  isEmpty() {
+    return this.data.length === 0;
+  }
+}
+
+function buildBlockList(tiles) {
+  const blocks = [];
+  tiles.forEach((row, y) => {
+    row.forEach((tile, x) => {
+      if (tile.type === "block") {
+        blocks.push({ x, y, directions: tile.directions || [] });
+      }
+    });
+  });
+  return blocks;
+}
+
+function estimateMinPushes({ tiles, width, height, startArea, exit }) {
+  const blocks = buildBlockList(tiles);
+  const blockPositions = blocks.map((block) => block.y * width + block.x);
+  const exitIndex = exit.y * width + exit.x;
+
+  const isWall = (x, y) => tiles[y][x].type === "rock";
+
+  const stateKey = (playerIndex, positions) =>
+    `${playerIndex}|${positions.join(",")}`;
+
+  const heap = new MinHeap();
+  const dist = new Map();
+
+  for (let y = startArea.y; y < startArea.y + startArea.size; y += 1) {
+    for (let x = startArea.x; x < startArea.x + startArea.size; x += 1) {
+      const startIndex = y * width + x;
+      const key = stateKey(startIndex, blockPositions);
+      if (!dist.has(key)) {
+        dist.set(key, 0);
+        heap.push({ priority: 0, playerIndex: startIndex, positions: blockPositions });
+      }
+    }
+  }
+
+  while (!heap.isEmpty()) {
+    const current = heap.pop();
+    if (!current) {
+      break;
+    }
+    const currentKey = stateKey(current.playerIndex, current.positions);
+    const currentDist = dist.get(currentKey);
+    if (currentDist !== current.priority) {
+      continue;
+    }
+    if (current.playerIndex === exitIndex) {
+      return currentDist;
+    }
+
+    const blockMap = new Map();
+    current.positions.forEach((pos, index) => {
+      blockMap.set(pos, index);
+    });
+
+    const px = current.playerIndex % width;
+    const py = Math.floor(current.playerIndex / width);
+
+    for (const dir of DIRECTIONS) {
+      const nx = px + dir.dx;
+      const ny = py + dir.dy;
+      if (!inBounds(nx, ny, width, height)) {
+        continue;
+      }
+      if (isWall(nx, ny)) {
+        continue;
+      }
+
+      const nextIndex = ny * width + nx;
+      const blockIndex = blockMap.get(nextIndex);
+
+      if (blockIndex === undefined) {
+        const nextKey = stateKey(nextIndex, current.positions);
+        const nextDist = currentDist;
+        if (!dist.has(nextKey) || nextDist < dist.get(nextKey)) {
+          dist.set(nextKey, nextDist);
+          heap.push({ priority: nextDist, playerIndex: nextIndex, positions: current.positions });
+        }
+        continue;
+      }
+
+      const chain = [];
+      let cx = nx;
+      let cy = ny;
+      let valid = true;
+      while (true) {
+        const chainIndex = blockMap.get(cy * width + cx);
+        if (chainIndex === undefined) {
+          break;
+        }
+        const block = blocks[chainIndex];
+        if (!block.directions || !block.directions.includes(dir.name)) {
+          valid = false;
+          break;
+        }
+        chain.push(chainIndex);
+        cx += dir.dx;
+        cy += dir.dy;
+        if (!inBounds(cx, cy, width, height)) {
+          valid = false;
+          break;
+        }
+      }
+      if (!valid) {
+        continue;
+      }
+      if (!inBounds(cx, cy, width, height)) {
+        continue;
+      }
+      if (isWall(cx, cy)) {
+        continue;
+      }
+      if (cx === exit.x && cy === exit.y) {
+        continue;
+      }
+      if (blockMap.has(cy * width + cx)) {
+        continue;
+      }
+
+      const updated = current.positions.slice();
+      chain.forEach((index) => {
+        const pos = current.positions[index];
+        const x = pos % width;
+        const y = Math.floor(pos / width);
+        updated[index] = (y + dir.dy) * width + (x + dir.dx);
+      });
+      const nextKey = stateKey(nextIndex, updated);
+      const nextDist = currentDist + 1;
+      if (!dist.has(nextKey) || nextDist < dist.get(nextKey)) {
+        dist.set(nextKey, nextDist);
+        heap.push({ priority: nextDist, playerIndex: nextIndex, positions: updated });
       }
     }
   }
@@ -709,6 +880,7 @@ function estimateMinPushes({ tiles, width, height, startArea, exit }) {
 function generateLevel({ level, seed, width, height }) {
   const targetPushes = 2 * level;
   const maxAttempts = 120;
+  const minMonsterTiles = 5;
   let bestCandidate = null;
   let bestPushes = -Infinity;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -720,15 +892,31 @@ function generateLevel({ level, seed, width, height }) {
       height,
     });
     const minPushes = estimateMinPushes(generated);
-    if (Number.isFinite(minPushes) && minPushes > bestPushes) {
+    const hasMobility = monstersHaveMobility(generated, minMonsterTiles);
+    if (Number.isFinite(minPushes) && hasMobility && minPushes > bestPushes) {
       bestPushes = minPushes;
       bestCandidate = generated;
     }
-    if (Number.isFinite(minPushes) && minPushes >= targetPushes) {
+    if (Number.isFinite(minPushes) && minPushes >= targetPushes && hasMobility) {
       return generated;
     }
   }
-  return bestCandidate || generateLevelOnce({ level, seed, width, height });
+  if (bestCandidate) {
+    return bestCandidate;
+  }
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const attemptSeed = seed + attempt * 409;
+    const generated = generateLevelOnce({
+      level,
+      seed: attemptSeed,
+      width,
+      height,
+    });
+    if (monstersHaveMobility(generated, minMonsterTiles)) {
+      return generated;
+    }
+  }
+  return generateLevelOnce({ level, seed, width, height });
 }
 
 function createTokens({ tokens, tokenCount, startArea }) {
@@ -742,6 +930,7 @@ function createTokens({ tokens, tokenCount, startArea }) {
         ownerId: token.ownerId || null,
         gold: Number.isFinite(token.gold) ? token.gold : 0,
         avatar: token.avatar || "",
+        initiativeMod: Number.isFinite(token.initiativeMod) ? token.initiativeMod : 0,
         x: pos.x,
         y: pos.y,
         lastMoveAt: 0,
@@ -755,13 +944,20 @@ function createTokens({ tokens, tokenCount, startArea }) {
     ownerId: null,
     gold: 0,
     avatar: "",
+    initiativeMod: 0,
     x: pos.x,
     y: pos.y,
     lastMoveAt: 0,
   }));
 }
 
-function createGame({ level = 1, seed = 42, tokens = null, tokenCount = 4 } = {}) {
+function createGame({
+  level = 1,
+  seed = 42,
+  tokens = null,
+  tokenCount = 4,
+  monsterConfig = null,
+} = {}) {
   const width = DEFAULT_WIDTH;
   const height = DEFAULT_HEIGHT;
   const generated = generateLevel({ level, seed, width, height });
@@ -770,6 +966,7 @@ function createGame({ level = 1, seed = 42, tokens = null, tokenCount = 4 } = {}
     tokenCount,
     startArea: generated.startArea,
   });
+  const nextMonsterConfig = normalizeMonsterConfig(monsterConfig);
 
   return {
     gameId: GAME_ID,
@@ -783,6 +980,8 @@ function createGame({ level = 1, seed = 42, tokens = null, tokenCount = 4 } = {}
     exit: generated.exit,
     tokens: nextTokens,
     monsters: generated.monsters,
+    monsterConfig: nextMonsterConfig,
+    combat: null,
     pendingTrap: null,
   };
 }
@@ -809,6 +1008,180 @@ function computeVisibility(tiles, width, height) {
   return visible;
 }
 
+function rollInitiative(mod) {
+  const roll = Math.floor(Math.random() * 20) + 1;
+  return roll + mod;
+}
+
+function sortCombatEntries(entries) {
+  return entries.sort((a, b) => {
+    if (a.initiative !== b.initiative) {
+      return b.initiative - a.initiative;
+    }
+    if ((a.mod || 0) !== (b.mod || 0)) {
+      return (b.mod || 0) - (a.mod || 0);
+    }
+    const aPlayer = a.type === "player";
+    const bPlayer = b.type === "player";
+    if (aPlayer !== bPlayer) {
+      return aPlayer ? -1 : 1;
+    }
+    return 0;
+  });
+}
+
+function syncOtherMonstersEntry(state, combat) {
+  if (!combat) {
+    return;
+  }
+  const trackedMonsters = new Set(
+    combat.order.filter((entry) => entry.type === "monster").map((entry) => entry.id)
+  );
+  const hasOtherMonsters = state.monsters.some((monster) => !trackedMonsters.has(monster.id));
+  const otherIndex = combat.order.findIndex((entry) => entry.type === "other-monsters");
+
+  if (hasOtherMonsters && otherIndex === -1) {
+    combat.order.push({
+      id: "other-monsters",
+      type: "other-monsters",
+      initiative: 0,
+      mod: 0,
+    });
+  }
+
+  if (!hasOtherMonsters && otherIndex !== -1) {
+    combat.order.splice(otherIndex, 1);
+    if (combat.currentIndex > otherIndex) {
+      combat.currentIndex -= 1;
+    } else if (combat.currentIndex >= combat.order.length) {
+      combat.currentIndex = Math.max(0, combat.order.length - 1);
+    }
+  }
+}
+
+function pruneCombat(state) {
+  if (!state.combat) {
+    return;
+  }
+  const aliveMonsters = new Set(state.monsters.map((monster) => monster.id));
+  state.combat.order = state.combat.order.filter(
+    (entry) => entry.type !== "monster" || aliveMonsters.has(entry.id)
+  );
+  if (state.combat.currentIndex >= state.combat.order.length) {
+    state.combat.currentIndex = Math.max(0, state.combat.order.length - 1);
+  }
+  syncOtherMonstersEntry(state, state.combat);
+  if (state.monsters.length === 0) {
+    state.combat = null;
+  }
+}
+
+function removeCombatEntry(state, entryId) {
+  if (!state.combat) {
+    return;
+  }
+  const index = state.combat.order.findIndex((entry) => entry.id === entryId);
+  if (index === -1) {
+    return;
+  }
+  state.combat.order.splice(index, 1);
+  if (state.combat.currentIndex > index) {
+    state.combat.currentIndex -= 1;
+  } else if (state.combat.currentIndex >= state.combat.order.length) {
+    state.combat.currentIndex = Math.max(0, state.combat.order.length - 1);
+  }
+  syncOtherMonstersEntry(state, state.combat);
+  if (state.combat.order.length === 0) {
+    state.combat = null;
+  }
+}
+
+function buildCombatEntries(state, monster) {
+  const monsterConfig = normalizeMonsterConfig(state.monsterConfig);
+  const entries = state.tokens.map((token) => {
+    const mod = Number.isFinite(token.initiativeMod) ? token.initiativeMod : 0;
+    return {
+      id: token.id,
+      type: "player",
+      initiative: rollInitiative(mod),
+      mod,
+    };
+  });
+  const monsterMod = monsterConfig[monster.type]
+    ? monsterConfig[monster.type].initiativeMod || 0
+    : 0;
+  entries.push({
+    id: monster.id,
+    type: "monster",
+    monsterType: monster.type,
+    initiative: rollInitiative(monsterMod),
+    mod: monsterMod,
+  });
+  return entries;
+}
+
+function startCombat(state, monster) {
+  if (state.combat && state.combat.active) {
+    return false;
+  }
+  const order = buildCombatEntries(state, monster);
+  const combat = {
+    active: true,
+    order,
+    currentIndex: 0,
+    round: 1,
+    lastOtherMonstersRound: 0,
+  };
+  syncOtherMonstersEntry(state, combat);
+  combat.order = sortCombatEntries(combat.order);
+  state.combat = combat;
+  return true;
+}
+
+function serializeCombat(state, role, socketId) {
+  if (!state.combat || !state.combat.active) {
+    return null;
+  }
+  const monsterConfig = normalizeMonsterConfig(state.monsterConfig);
+  return {
+    active: true,
+    currentIndex: state.combat.currentIndex,
+    round: state.combat.round,
+    order: state.combat.order.map((entry) => {
+      if (entry.type === "player") {
+        const token = state.tokens.find((player) => player.id === entry.id);
+        return {
+          id: entry.id,
+          type: "player",
+          name: token && token.name ? token.name : "Hero",
+          avatar: token ? token.avatar : "",
+          initiative: entry.initiative,
+          mod: entry.mod,
+          ownedBySelf: token ? token.ownerId === socketId : false,
+        };
+      }
+      if (entry.type === "monster") {
+        const config = monsterConfig[entry.monsterType] || {};
+        return {
+          id: entry.id,
+          type: "monster",
+          monsterType: entry.monsterType,
+          name: `${entry.monsterType} monster`,
+          avatar: config.avatar || "",
+          initiative: entry.initiative,
+          mod: entry.mod,
+        };
+      }
+      return {
+        id: "other-monsters",
+        type: "other-monsters",
+        name: "Other monsters",
+        initiative: entry.initiative,
+        mod: entry.mod,
+      };
+    }),
+  };
+}
 function serializeTile(tile, count, role, visible, uncovered) {
   if (role === "player" && !visible) {
     return { visible: false };
@@ -844,6 +1217,7 @@ function serializeState(state, { role, socketId }) {
     name: token.name,
     gold: token.gold,
     avatar: token.avatar,
+    initiativeMod: token.initiativeMod,
     x: token.x,
     y: token.y,
     owned: Boolean(token.ownerId),
@@ -851,10 +1225,18 @@ function serializeState(state, { role, socketId }) {
   }));
 
   const players = state.tokens;
+  const monsterConfig = normalizeMonsterConfig(state.monsterConfig);
   const monsters = state.monsters
     .map((monster) => {
       if (role === "dm") {
-        return { id: monster.id, type: monster.type, x: monster.x, y: monster.y };
+        const config = monsterConfig[monster.type] || {};
+        return {
+          id: monster.id,
+          type: monster.type,
+          x: monster.x,
+          y: monster.y,
+          avatar: config.avatar || "",
+        };
       }
       const visibleToPlayer = players.some(
         (token) => manhattan(token, monster) <= 10
@@ -862,7 +1244,14 @@ function serializeState(state, { role, socketId }) {
       if (!visibleToPlayer) {
         return null;
       }
-      return { id: monster.id, type: monster.type, x: monster.x, y: monster.y };
+      const config = monsterConfig[monster.type] || {};
+      return {
+        id: monster.id,
+        type: monster.type,
+        x: monster.x,
+        y: monster.y,
+        avatar: config.avatar || "",
+      };
     })
     .filter(Boolean);
 
@@ -885,6 +1274,15 @@ function serializeState(state, { role, socketId }) {
     tiles,
     tokens,
     monsters,
+    monsterConfig: MONSTER_TYPES.reduce((acc, type) => {
+      const config = monsterConfig[type] || {};
+      acc[type] = {
+        avatar: config.avatar || "",
+        initiativeMod: role === "dm" ? config.initiativeMod || 0 : null,
+      };
+      return acc;
+    }, {}),
+    combat: serializeCombat(state, role, socketId),
     pendingTrap: state.pendingTrap
       ? role === "dm"
         ? {
@@ -1077,6 +1475,12 @@ function tryPushBlock(state, blockPos, dir, options = {}) {
     emptyIndex = destroyIndex;
   }
 
+  const effects = {
+    blockMoved: true,
+    destroyedTreasure: destroyTreasure,
+    destroyedMonster: destroyMonster,
+  };
+
   if (dryRun) {
     return { ok: true, pushedPlayer };
   }
@@ -1089,6 +1493,10 @@ function tryPushBlock(state, blockPos, dir, options = {}) {
     const targetMonster = line[destroyIndex] && line[destroyIndex].monster;
     if (targetMonster) {
       state.monsters = state.monsters.filter((monster) => monster.id !== targetMonster.id);
+      removeCombatEntry(state, targetMonster.id);
+      if (state.combat && state.monsters.length === 0) {
+        state.combat = null;
+      }
     }
   }
 
@@ -1149,7 +1557,7 @@ function tryPushBlock(state, blockPos, dir, options = {}) {
   }
   state.tiles[blocks[0].y][blocks[0].x] = createEmptyTile();
   state.tiles[blocks[0].y][blocks[0].x].uncovered = true;
-  return { ok: true, pushedPlayer };
+  return { ok: true, pushedPlayer, effects };
 }
 
 function applyMove(state, move, context) {
@@ -1188,6 +1596,7 @@ function applyMove(state, move, context) {
   if (now - token.lastMoveAt < minInterval) {
     return { ok: false, error: "Slow down. You can move 3 tiles per second." };
   }
+  const sounds = [];
 
   if (findTokenAt(state, target.x, target.y)) {
     return { ok: false, error: "That space is already occupied." };
@@ -1195,8 +1604,9 @@ function applyMove(state, move, context) {
 
   const monster = findMonsterAt(state, target.x, target.y);
   if (monster) {
+    startCombat(state, monster);
     return {
-      ok: false,
+      ok: true,
       announcement: MONSTER_HIT_MESSAGES[monster.type] || "A monster strikes!",
     };
   }
@@ -1212,6 +1622,15 @@ function applyMove(state, move, context) {
     });
     if (!pushed.ok) {
       return { ok: false, error: pushed.error || "That block will not move." };
+    }
+    if (pushed.effects && pushed.effects.blockMoved) {
+      sounds.push("block-drag");
+      if (pushed.effects.destroyedTreasure) {
+        sounds.push("gold-break");
+      }
+      if (pushed.effects.destroyedMonster) {
+        sounds.push("monster-howl");
+      }
     }
     tile = state.tiles[target.y][target.x];
   }
@@ -1229,6 +1648,7 @@ function applyMove(state, move, context) {
       ok: true,
       trapTriggered: true,
       announcement: state.pendingTrap.message,
+      sounds: ["trap-explosion"],
     };
   }
 
@@ -1244,6 +1664,7 @@ function applyMove(state, move, context) {
     return {
       ok: true,
       announcement: `${token.name || "A hero"} gains ${gain} gold.`,
+      sounds,
     };
   }
 
@@ -1251,14 +1672,14 @@ function applyMove(state, move, context) {
     token.x = target.x;
     token.y = target.y;
     token.lastMoveAt = now;
-    return { ok: true, reachedExit: true };
+    return { ok: true, reachedExit: true, sounds };
   }
 
   token.x = target.x;
   token.y = target.y;
   token.lastMoveAt = now;
   tile.uncovered = true;
-  return { ok: true };
+  return { ok: true, sounds };
 }
 
 function setTokenName(state, tokenId, name, socketId, role) {
@@ -1299,6 +1720,226 @@ function setTokenAvatar(state, tokenId, avatar, socketId, role) {
   return { ok: true };
 }
 
+function applyMonsterMove(state, move, context) {
+  if (!move || !move.monsterId || !move.to) {
+    return { ok: false, error: "That move is not possible." };
+  }
+  if (context.role !== "dm") {
+    return { ok: false, error: "Only the DM can move monsters." };
+  }
+  const monster = state.monsters.find((entry) => entry.id === move.monsterId);
+  if (!monster) {
+    return { ok: false, error: "That monster is missing." };
+  }
+
+  const target = move.to;
+  if (!inBounds(target.x, target.y, state.width, state.height)) {
+    return { ok: false, error: "That move is not possible." };
+  }
+  const dx = target.x - monster.x;
+  const dy = target.y - monster.y;
+  if (Math.abs(dx) + Math.abs(dy) !== 1) {
+    return { ok: false, error: "Move one tile at a time." };
+  }
+  if (findMonsterAt(state, target.x, target.y)) {
+    return { ok: false, error: "That space is already occupied." };
+  }
+
+  const dir = DIRECTIONS.find((step) => step.dx === dx && step.dy === dy);
+  let tile = state.tiles[target.y][target.x];
+  if (tile.type === "rock" || tile.type === "exit") {
+    return { ok: false, error: "That move is not possible." };
+  }
+
+  const sounds = [];
+
+  if (tile.type === "block") {
+    const pushed = tryPushBlock(state, { x: target.x, y: target.y }, dir, {
+      requireUncovered: false,
+    });
+    if (!pushed.ok) {
+      return { ok: false, error: pushed.error || "That block will not move." };
+    }
+    if (pushed.effects && pushed.effects.blockMoved) {
+      sounds.push("block-drag");
+      if (pushed.effects.destroyedTreasure) {
+        sounds.push("gold-break");
+      }
+      if (pushed.effects.destroyedMonster) {
+        sounds.push("monster-howl");
+      }
+    }
+    tile = state.tiles[target.y][target.x];
+  }
+
+  const player = findTokenAt(state, target.x, target.y);
+  if (player) {
+    pushPlayerAway(state, player, dir);
+    startCombat(state, monster);
+    sounds.push("monster-roar");
+    return {
+      ok: true,
+      announcement: MONSTER_HIT_MESSAGES[monster.type] || "A monster strikes!",
+      sounds,
+    };
+  }
+
+  monster.x = target.x;
+  monster.y = target.y;
+  return { ok: true, sounds };
+}
+
+function setTokenInitiativeMod(state, tokenId, mod, socketId, role) {
+  const token = state.tokens.find((entry) => entry.id === tokenId);
+  if (!token) {
+    return { ok: false, error: "That token is missing." };
+  }
+  if (role !== "dm" && token.ownerId && token.ownerId !== socketId) {
+    return { ok: false, error: "That token belongs to someone else." };
+  }
+  const value = Number.parseInt(mod, 10);
+  token.initiativeMod = Number.isFinite(value) ? value : 0;
+  if (role !== "dm") {
+    token.ownerId = socketId;
+  }
+  if (state.combat && state.combat.active) {
+    const entry = state.combat.order.find(
+      (combatEntry) => combatEntry.type === "player" && combatEntry.id === token.id
+    );
+    if (entry) {
+      entry.mod = token.initiativeMod;
+    }
+  }
+  return { ok: true };
+}
+
+function setMonsterConfig(state, type, config, role) {
+  if (role !== "dm") {
+    return { ok: false, error: "Only the DM can update monsters." };
+  }
+  if (!MONSTER_TYPES.includes(type)) {
+    return { ok: false, error: "Unknown monster type." };
+  }
+  const nextConfig = normalizeMonsterConfig(state.monsterConfig);
+  const current = nextConfig[type];
+  if (config && typeof config.avatar === "string") {
+    current.avatar = config.avatar;
+  }
+  if (config && Number.isFinite(Number.parseInt(config.initiativeMod, 10))) {
+    current.initiativeMod = Number.parseInt(config.initiativeMod, 10);
+  }
+  nextConfig[type] = current;
+  state.monsterConfig = nextConfig;
+
+  if (state.combat && state.combat.active) {
+    state.combat.order.forEach((entry) => {
+      if (entry.type === "monster" && entry.monsterType === type) {
+        entry.mod = current.initiativeMod;
+      }
+    });
+  }
+  return { ok: true };
+}
+
+function setCombatInitiative(state, entryId, initiative, socketId, role) {
+  if (!state.combat || !state.combat.active) {
+    return { ok: false, error: "No combat is active." };
+  }
+  const entry = state.combat.order.find((combatEntry) => combatEntry.id === entryId);
+  if (!entry) {
+    return { ok: false, error: "That combatant is missing." };
+  }
+  if (entry.type === "player") {
+    const token = state.tokens.find((player) => player.id === entryId);
+    if (role !== "dm" && token && token.ownerId && token.ownerId !== socketId) {
+      return { ok: false, error: "That token belongs to someone else." };
+    }
+  } else if (entry.type === "monster") {
+    if (role !== "dm") {
+      return { ok: false, error: "Only the DM can update monsters." };
+    }
+  } else {
+    return { ok: false, error: "That combatant cannot be edited." };
+  }
+  const value = Number.parseInt(initiative, 10);
+  if (!Number.isFinite(value)) {
+    return { ok: false, error: "Initiative must be a number." };
+  }
+  entry.initiative = value;
+  return { ok: true };
+}
+
+function resortCombat(state, role) {
+  if (!state.combat || !state.combat.active) {
+    return { ok: false, error: "No combat is active." };
+  }
+  if (role !== "dm") {
+    return { ok: false, error: "Only the DM can reorder combat." };
+  }
+  const currentId = state.combat.order[state.combat.currentIndex]
+    ? state.combat.order[state.combat.currentIndex].id
+    : null;
+  syncOtherMonstersEntry(state, state.combat);
+  state.combat.order = sortCombatEntries(state.combat.order);
+  if (currentId) {
+    const index = state.combat.order.findIndex((entry) => entry.id === currentId);
+    state.combat.currentIndex = index === -1 ? 0 : index;
+  }
+  return { ok: true };
+}
+
+function addMonsterToCombat(state, monsterId, role) {
+  if (role !== "dm") {
+    return { ok: false, error: "Only the DM can add monsters." };
+  }
+  if (!state.combat || !state.combat.active) {
+    return { ok: false, error: "No combat is active." };
+  }
+  const monster = state.monsters.find((entry) => entry.id === monsterId);
+  if (!monster) {
+    return { ok: false, error: "That monster is missing." };
+  }
+  if (state.combat.order.some((entry) => entry.id === monsterId)) {
+    return { ok: false, error: "That monster is already in combat." };
+  }
+  const config = normalizeMonsterConfig(state.monsterConfig);
+  const mod = config[monster.type] ? config[monster.type].initiativeMod || 0 : 0;
+  state.combat.order.push({
+    id: monster.id,
+    type: "monster",
+    monsterType: monster.type,
+    initiative: rollInitiative(mod),
+    mod,
+  });
+  syncOtherMonstersEntry(state, state.combat);
+  state.combat.order = sortCombatEntries(state.combat.order);
+  return { ok: true };
+}
+
+function deleteMonster(state, monsterId, role) {
+  if (role !== "dm") {
+    return { ok: false, error: "Only the DM can delete monsters." };
+  }
+  const monsterIndex = state.monsters.findIndex((monster) => monster.id === monsterId);
+  if (monsterIndex === -1) {
+    return { ok: false, error: "That monster is missing." };
+  }
+  state.monsters.splice(monsterIndex, 1);
+  removeCombatEntry(state, monsterId);
+  if (state.monsters.length === 0) {
+    state.combat = null;
+  }
+  return { ok: true };
+}
+
+function exitCombat(state, role) {
+  if (role !== "dm") {
+    return { ok: false, error: "Only the DM can end combat." };
+  }
+  state.combat = null;
+  return { ok: true };
+}
+
 function advanceLevel(state) {
   const nextTokens = state.tokens.map((token) => ({
     id: token.id,
@@ -1306,12 +1947,14 @@ function advanceLevel(state) {
     ownerId: token.ownerId,
     gold: token.gold,
     avatar: token.avatar,
+    initiativeMod: token.initiativeMod,
   }));
   return createGame({
     level: state.level + 1,
     seed: state.seed,
     tokens: nextTokens,
     tokenCount: state.tokens.length,
+    monsterConfig: state.monsterConfig,
   });
 }
 
@@ -1322,12 +1965,14 @@ function resetLevel(state) {
     ownerId: token.ownerId,
     gold: token.gold,
     avatar: token.avatar,
+    initiativeMod: token.initiativeMod,
   }));
   return createGame({
     level: state.level,
     seed: state.seed,
     tokens: nextTokens,
     tokenCount: state.tokens.length,
+    monsterConfig: state.monsterConfig,
   });
 }
 
@@ -1415,6 +2060,7 @@ function moveMonster(state, monster, move) {
   if (!move) {
     return null;
   }
+  const sounds = [];
   let pushedPlayer = false;
   if (move.pushBlock) {
     const pushed = tryPushBlock(state, { x: move.x, y: move.y }, move.dir, {
@@ -1425,6 +2071,15 @@ function moveMonster(state, monster, move) {
       return null;
     }
     pushedPlayer = pushed.pushedPlayer;
+    if (pushed.effects && pushed.effects.blockMoved) {
+      sounds.push("block-drag");
+      if (pushed.effects.destroyedTreasure) {
+        sounds.push("gold-break");
+      }
+      if (pushed.effects.destroyedMonster) {
+        sounds.push("monster-howl");
+      }
+    }
   }
   const player = findTokenAt(state, move.x, move.y);
   if (player) {
@@ -1432,6 +2087,7 @@ function moveMonster(state, monster, move) {
     return {
       hit: true,
       message: MONSTER_HIT_MESSAGES[monster.type] || "A monster strikes!",
+      sounds,
     };
   }
   monster.x = move.x;
@@ -1440,9 +2096,10 @@ function moveMonster(state, monster, move) {
     return {
       hit: true,
       message: "A yellow brute shoves a block into a hero!",
+      sounds,
     };
   }
-  return { hit: false };
+  return { hit: false, sounds };
 }
 
 function computeVioletSpeed(distance) {
@@ -1456,72 +2113,85 @@ function computeVioletSpeed(distance) {
   return VIOLET_MIN_SPEED + ratio * (VIOLET_MAX_SPEED - VIOLET_MIN_SPEED);
 }
 
+function computeMonsterMove(state, monster, timestamp) {
+  let speed = MONSTER_SPEED_TPS;
+  let move = null;
+  if (monster.type === "violet") {
+    const path = findShortestPath(
+      { x: monster.x, y: monster.y },
+      state.tokens.map((token) => ({ x: token.x, y: token.y })),
+      state
+    );
+    if (!path || path.length < 2) {
+      return { move: null, speed };
+    }
+    const distance = path.length - 1;
+    speed = computeVioletSpeed(distance);
+    const next = path[1];
+    const dir = DIRECTIONS.find(
+      (step) => step.dx === next.x - monster.x && step.dy === next.y - monster.y
+    );
+    move = { x: next.x, y: next.y, dir };
+  } else if (monster.type === "red") {
+    let nearest = state.tokens[0];
+    let bestDistance = nearest ? manhattan(monster, nearest) : Infinity;
+    state.tokens.forEach((token) => {
+      const dist = manhattan(monster, token);
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        nearest = token;
+      }
+    });
+    if (!nearest) {
+      return { move: null, speed };
+    }
+    const dx = nearest.x - monster.x;
+    const dy = nearest.y - monster.y;
+    let preferred = null;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      preferred = dx >= 0
+        ? DIRECTIONS.find((d) => d.name === "right")
+        : DIRECTIONS.find((d) => d.name === "left");
+    } else {
+      preferred = dy >= 0
+        ? DIRECTIONS.find((d) => d.name === "down")
+        : DIRECTIONS.find((d) => d.name === "up");
+    }
+    const alternatives = shuffle([...DIRECTIONS], createRng(monster.x + monster.y + timestamp));
+    const checks = [preferred].concat(alternatives).filter(Boolean);
+    for (const dir of checks) {
+      const nx = monster.x + dir.dx;
+      const ny = monster.y + dir.dy;
+      if (!inBounds(nx, ny, state.width, state.height)) {
+        continue;
+      }
+      if (canMonsterMoveInto(state.tiles[ny][nx])) {
+        move = { x: nx, y: ny, dir };
+        break;
+      }
+    }
+  } else if (monster.type === "yellow") {
+    move = chooseRandomMove(state, monster, true);
+  } else {
+    move = chooseRandomMove(state, monster, false);
+  }
+  return { move, speed };
+}
+
 function updateMonsters(state, { now } = {}) {
   if (state.pendingTrap) {
-    return { changed: false, events: [] };
+    return { changed: false, events: [], sounds: [] };
+  }
+  if (state.combat && state.combat.active) {
+    return { changed: false, events: [], sounds: [] };
   }
   const timestamp = now || Date.now();
   const events = [];
+  const sounds = [];
   let changed = false;
 
   state.monsters.forEach((monster) => {
-    let speed = MONSTER_SPEED_TPS;
-    let move = null;
-    if (monster.type === "violet") {
-      const path = findShortestPath(
-        { x: monster.x, y: monster.y },
-        state.tokens.map((token) => ({ x: token.x, y: token.y })),
-        state
-      );
-      if (!path || path.length < 2) {
-        return;
-      }
-      const distance = path.length - 1;
-      speed = computeVioletSpeed(distance);
-      const next = path[1];
-      const dir = DIRECTIONS.find(
-        (step) => step.dx === next.x - monster.x && step.dy === next.y - monster.y
-      );
-      move = { x: next.x, y: next.y, dir };
-    } else if (monster.type === "red") {
-      let nearest = state.tokens[0];
-      let bestDistance = nearest ? manhattan(monster, nearest) : Infinity;
-      state.tokens.forEach((token) => {
-        const dist = manhattan(monster, token);
-        if (dist < bestDistance) {
-          bestDistance = dist;
-          nearest = token;
-        }
-      });
-      if (!nearest) {
-        return;
-      }
-      const dx = nearest.x - monster.x;
-      const dy = nearest.y - monster.y;
-      let preferred = null;
-      if (Math.abs(dx) >= Math.abs(dy)) {
-        preferred = dx >= 0 ? DIRECTIONS.find((d) => d.name === "right") : DIRECTIONS.find((d) => d.name === "left");
-      } else {
-        preferred = dy >= 0 ? DIRECTIONS.find((d) => d.name === "down") : DIRECTIONS.find((d) => d.name === "up");
-      }
-      const alternatives = shuffle([...DIRECTIONS], createRng(monster.x + monster.y + timestamp));
-      const checks = [preferred].concat(alternatives).filter(Boolean);
-      for (const dir of checks) {
-        const nx = monster.x + dir.dx;
-        const ny = monster.y + dir.dy;
-        if (!inBounds(nx, ny, state.width, state.height)) {
-          continue;
-        }
-        if (canMonsterMoveInto(state.tiles[ny][nx])) {
-          move = { x: nx, y: ny, dir };
-          break;
-        }
-      }
-    } else if (monster.type === "yellow") {
-      move = chooseRandomMove(state, monster, true);
-    } else {
-      move = chooseRandomMove(state, monster, false);
-    }
+    const { move, speed } = computeMonsterMove(state, monster, timestamp);
 
     if (!move) {
       return;
@@ -1538,11 +2208,112 @@ function updateMonsters(state, { now } = {}) {
       changed = true;
       if (result.hit) {
         events.push({ type: "announcement", message: result.message });
+        sounds.push("monster-roar");
+        startCombat(state, monster);
+      }
+      if (result.sounds && result.sounds.length > 0) {
+        sounds.push(...result.sounds);
       }
     }
   });
 
-  return { changed, events };
+  return { changed, events, sounds };
+}
+
+function runMonsterTurn(state, monster, { now } = {}) {
+  const timestamp = now || Date.now();
+  const { move } = computeMonsterMove(state, monster, timestamp);
+  if (!move) {
+    return { changed: false, events: [], sounds: [] };
+  }
+  const events = [];
+  const sounds = [];
+  const result = moveMonster(state, monster, move);
+  if (result) {
+    if (result.hit) {
+      events.push({ type: "announcement", message: result.message });
+      sounds.push("monster-roar");
+      startCombat(state, monster);
+    }
+    if (result.sounds && result.sounds.length > 0) {
+      sounds.push(...result.sounds);
+    }
+    return { changed: true, events, sounds };
+  }
+  return { changed: false, events, sounds };
+}
+
+function runOtherMonstersTurn(state, { now } = {}) {
+  const tracked = new Set(
+    state.combat
+      ? state.combat.order.filter((entry) => entry.type === "monster").map((entry) => entry.id)
+      : []
+  );
+  let changed = false;
+  const events = [];
+  const sounds = [];
+  state.monsters.forEach((monster) => {
+    if (tracked.has(monster.id)) {
+      return;
+    }
+    const result = runMonsterTurn(state, monster, { now });
+    if (result.changed) {
+      changed = true;
+    }
+    if (result.events.length > 0) {
+      events.push(...result.events);
+    }
+    if (result.sounds.length > 0) {
+      sounds.push(...result.sounds);
+    }
+  });
+  return { changed, events, sounds };
+}
+
+function advanceCombatTurn(state, role, { direction = 1 } = {}) {
+  if (!state.combat || !state.combat.active) {
+    return { ok: false, error: "No combat is active." };
+  }
+  if (role !== "dm") {
+    return { ok: false, error: "Only the DM can advance combat." };
+  }
+  pruneCombat(state);
+  if (!state.combat || state.combat.order.length === 0) {
+    return { ok: false, error: "No combatants remain." };
+  }
+  if (direction !== 1 && direction !== -1) {
+    direction = 1;
+  }
+
+  const combat = state.combat;
+  const currentIndex = combat.currentIndex;
+  let nextIndex = currentIndex + direction;
+  if (nextIndex >= combat.order.length) {
+    nextIndex = 0;
+    combat.round += 1;
+  } else if (nextIndex < 0) {
+    nextIndex = combat.order.length - 1;
+  }
+  combat.currentIndex = nextIndex;
+
+  const entry = combat.order[nextIndex];
+  if (direction === -1) {
+    return { ok: true, changed: false, events: [], sounds: [] };
+  }
+
+  if (entry.type === "monster") {
+    return { ok: true, changed: false, events: [], sounds: [] };
+  }
+
+  if (entry.type === "other-monsters") {
+    if (combat.lastOtherMonstersRound !== combat.round) {
+      combat.lastOtherMonstersRound = combat.round;
+      const result = runOtherMonstersTurn(state, { now: Date.now() });
+      return { ok: true, ...result };
+    }
+  }
+
+  return { ok: true, changed: false, events: [], sounds: [] };
 }
 
 module.exports = {
@@ -1551,8 +2322,17 @@ module.exports = {
   createGame,
   serializeState,
   applyMove,
+  applyMonsterMove,
   setTokenName,
   setTokenAvatar,
+  setTokenInitiativeMod,
+  setMonsterConfig,
+  setCombatInitiative,
+  resortCombat,
+  addMonsterToCombat,
+  advanceCombatTurn,
+  deleteMonster,
+  exitCombat,
   advanceLevel,
   resetLevel,
   releaseTokenOwnership,

@@ -680,6 +680,33 @@ body.loaded .mine-board {
   letter-spacing: 0.08em;
 }
 
+.token-initiative {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
+.token-initiative-input {
+  width: 52px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(8, 6, 4, 0.8);
+  color: var(--text);
+  font-family: "Crimson Text", "Garamond", serif;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.token-initiative-input:disabled {
+  opacity: 0.5;
+}
+
 .mine-legend {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding-top: 12px;
@@ -751,6 +778,222 @@ body.loaded .mine-board {
 
 .chip-monster {
   color: var(--text);
+}
+
+.mine-combat {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.combat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--text-muted);
+}
+
+.combat-tracker {
+  display: grid;
+  gap: 6px;
+}
+
+.combat-empty {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(8, 6, 4, 0.55);
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.combat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 6, 4, 0.6);
+}
+
+.combat-row-active {
+  border-color: rgba(224, 194, 124, 0.6);
+  box-shadow: 0 0 0 1px rgba(224, 194, 124, 0.25);
+}
+
+.combat-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.combat-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background-size: cover;
+  background-position: center;
+}
+
+.combat-initiative {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.combat-initiative-input {
+  width: 52px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(8, 6, 4, 0.8);
+  color: var(--text);
+  font-family: "Crimson Text", "Garamond", serif;
+  font-size: 0.75rem;
+  text-align: center;
+}
+
+.combat-initiative-value {
+  min-width: 36px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.combat-mod {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.combat-controls {
+  display: flex;
+  gap: 8px;
+}
+
+.combat-controls button {
+  background: rgba(209, 143, 60, 0.9);
+  border: none;
+  color: #1a1107;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.combat-controls button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.monster-config {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 8, 5, 0.7);
+  display: grid;
+  gap: 10px;
+}
+
+.monster-config-header {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--text-muted);
+}
+
+.monster-config-row {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.monster-config-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(8, 6, 4, 0.6);
+  min-width: 160px;
+}
+
+.monster-config-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text);
+}
+
+.monster-config-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(14, 11, 7, 0.7);
+  color: var(--text);
+  display: grid;
+  place-items: center;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background-size: cover;
+  background-position: center;
+}
+
+.monster-config-avatar.has-avatar {
+  color: transparent;
+}
+
+.monster-config-input {
+  display: none;
+}
+
+.monster-config-button {
+  background: rgba(209, 143, 60, 0.9);
+  border: none;
+  color: #1a1107;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 0.65rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  width: max-content;
+}
+
+.monster-config-init {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
+.monster-config-init input {
+  width: 52px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(8, 6, 4, 0.8);
+  color: var(--text);
+  font-family: "Crimson Text", "Garamond", serif;
+  font-size: 0.75rem;
+  text-align: center;
 }
 
 .mine-grid-wrap {
@@ -862,6 +1105,13 @@ body.loaded .mine-board {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
+.block-arrow-multi {
+  width: clamp(18px, 2.6vw, 26px);
+  height: clamp(18px, 2.6vw, 26px);
+  color: var(--accent);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+}
+
 .block-arrow-right {
   transform: rotate(90deg);
 }
@@ -910,7 +1160,8 @@ body.loaded .mine-board {
   z-index: 2;
 }
 
-.token-marker {
+.token-marker,
+.monster-marker {
   width: 100%;
   height: 100%;
   border-radius: 10px;
@@ -930,7 +1181,8 @@ body.loaded .mine-board {
   color: transparent;
 }
 
-.token-marker.token-selected {
+.token-marker.token-selected,
+.monster-marker.monster-selected {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   box-shadow: 0 0 0 2px rgba(224, 194, 124, 0.35), 0 6px 12px var(--shadow);
@@ -943,19 +1195,8 @@ body.loaded .mine-board {
 
 .monster-marker {
   position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.65rem;
-  font-weight: bold;
-  color: #1a1107;
-  box-shadow: 0 2px 6px var(--shadow);
-  z-index: 3;
+  inset: 2px;
+  z-index: 2;
 }
 
 .monster-green {
@@ -972,6 +1213,10 @@ body.loaded .mine-board {
 
 .monster-violet {
   background: var(--monster-violet);
+}
+
+.monster-marker.monster-has-avatar {
+  color: transparent;
 }
 
 body.frozen .board {
@@ -1054,13 +1299,15 @@ body.frozen .mine-board {
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   }
 
+  .combat-controls {
+    flex-wrap: wrap;
+  }
+
   .token-marker {
     font-size: clamp(0.65rem, 3vw, 0.95rem);
   }
 
   .monster-marker {
-    width: 16px;
-    height: 16px;
-    font-size: 0.6rem;
+    font-size: clamp(0.65rem, 3vw, 0.95rem);
   }
 }

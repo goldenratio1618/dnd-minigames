@@ -9,6 +9,15 @@
   const gridEl = document.getElementById("mine-grid");
   const levelDisplay = document.getElementById("level-display");
   const trapOverlay = document.getElementById("trap-overlay");
+  const combatPanel = document.getElementById("combat-panel");
+  const combatTracker = document.getElementById("combat-tracker");
+  const combatResort = document.getElementById("combat-resort");
+  const combatPrev = document.getElementById("combat-prev");
+  const combatNext = document.getElementById("combat-next");
+  const combatExit = document.getElementById("combat-exit");
+  const monsterDelete = document.getElementById("monster-delete");
+  const monsterConfigEl = document.getElementById("monster-config");
+  const monsterConfigRow = document.getElementById("monster-config-row");
 
   const dmTrapAlert = document.getElementById("trap-alert");
   const dmTrapMessage = document.getElementById("trap-message");
@@ -27,8 +36,19 @@
   let dragTokenId = null;
   let dragFrom = null;
   let selectedTokenId = null;
+  let selectedMonsterId = null;
+  let dragMonsterId = null;
+  let dragMonsterFrom = null;
 
   const DIRECTION_ORDER = ["up", "right", "down", "left"];
+  const SOUND_FILES = {
+    "block-drag": "/sounds/stoneblockdragwoodgrind-82327.mp3",
+    "gold-break": "/sounds/breaking-glass-83809.mp3",
+    "monster-howl": "/sounds/monster-howl-85304.mp3",
+    "monster-roar": "/sounds/monster-warrior-roar-195877.mp3",
+    "trap-explosion": "/sounds/explosion-sound-effect-425455.mp3",
+  };
+  const soundCache = new Map();
   const MOVE_DIRECTIONS = [
     { name: "up", dx: 0, dy: -1 },
     { name: "down", dx: 0, dy: 1 },
@@ -50,6 +70,62 @@
     path.setAttribute("d", "M12 3l5.5 5.5h-3.6v11h-3.8v-11H6.5z");
     svg.appendChild(path);
     return svg;
+  }
+
+  function createMultiArrowIcon(kind) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    svg.classList.add("block-arrow-multi", `block-arrow-${kind}`);
+
+    const line = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", "currentColor");
+    line.setAttribute("stroke-width", "2");
+    line.setAttribute("stroke-linecap", "round");
+
+    const arrowHeads = [];
+
+    if (kind === "horizontal") {
+      line.setAttribute("d", "M6 12H18");
+      arrowHeads.push("M6 12L10 8V16Z");
+      arrowHeads.push("M18 12L14 8V16Z");
+    } else if (kind === "vertical") {
+      line.setAttribute("d", "M12 6V18");
+      arrowHeads.push("M12 6L8 10H16Z");
+      arrowHeads.push("M12 18L8 14H16Z");
+    } else {
+      line.setAttribute("d", "M6 12H18M12 6V18");
+      arrowHeads.push("M6 12L10 8V16Z");
+      arrowHeads.push("M18 12L14 8V16Z");
+      arrowHeads.push("M12 6L8 10H16Z");
+      arrowHeads.push("M12 18L8 14H16Z");
+    }
+
+    svg.appendChild(line);
+    arrowHeads.forEach((pathData) => {
+      const head = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      head.setAttribute("d", pathData);
+      head.setAttribute("fill", "currentColor");
+      svg.appendChild(head);
+    });
+    return svg;
+  }
+
+  Object.entries(SOUND_FILES).forEach(([id, src]) => {
+    const audio = new Audio(src);
+    audio.preload = "auto";
+    soundCache.set(id, audio);
+  });
+
+  function playSound(id) {
+    const base = soundCache.get(id);
+    if (!base) {
+      return;
+    }
+    const audio = base.cloneNode(true);
+    audio.volume = 0.7;
+    audio.play().catch(() => {});
   }
 
   function readImageFile(file) {
@@ -239,6 +315,9 @@
                 tokenId: token.id,
                 avatar: dataUrl,
               });
+              if (!isDM) {
+                setMessage("Set your initiative modifier.");
+              }
             })
             .catch(() => {
               setMessage("That image could not be loaded.");
@@ -310,10 +389,208 @@
       goldEl.className = "token-gold";
       goldEl.textContent = `Gold: ${token.gold}`;
 
+      const initiativeWrap = document.createElement("label");
+      initiativeWrap.className = "token-initiative";
+      const initiativeLabel = document.createElement("span");
+      initiativeLabel.textContent = "Init mod";
+      const initiativeInput = document.createElement("input");
+      initiativeInput.type = "number";
+      initiativeInput.className = "token-initiative-input";
+      initiativeInput.value = Number.isFinite(token.initiativeMod)
+        ? token.initiativeMod
+        : 0;
+      initiativeInput.disabled = !canEdit;
+      initiativeInput.addEventListener("change", () => {
+        socket.emit("setTokenInitiativeMod", {
+          tokenId: token.id,
+          initiativeMod: initiativeInput.value,
+        });
+      });
+      initiativeWrap.appendChild(initiativeLabel);
+      initiativeWrap.appendChild(initiativeInput);
+
       card.appendChild(nameEl);
       card.appendChild(goldEl);
+      card.appendChild(initiativeWrap);
       rosterEl.appendChild(card);
     });
+  }
+
+  function renderCombat() {
+    if (!combatPanel || !combatTracker) {
+      return;
+    }
+    combatTracker.innerHTML = "";
+    if (!state || !state.combat) {
+      combatPanel.classList.add("combat-inactive");
+      const empty = document.createElement("div");
+      empty.className = "combat-empty";
+      empty.textContent = "No combat active.";
+      combatTracker.appendChild(empty);
+      if (combatResort) {
+        combatResort.disabled = true;
+      }
+      if (combatPrev) {
+        combatPrev.disabled = true;
+      }
+      if (combatNext) {
+        combatNext.disabled = true;
+      }
+      return;
+    }
+
+    combatPanel.classList.remove("combat-inactive");
+    if (combatResort) {
+      combatResort.disabled = !isDM;
+    }
+    if (combatPrev) {
+      combatPrev.disabled = !isDM;
+    }
+    if (combatNext) {
+      combatNext.disabled = !isDM;
+    }
+
+    state.combat.order.forEach((entry, index) => {
+      const row = document.createElement("div");
+      row.className = "combat-row";
+      if (index === state.combat.currentIndex) {
+        row.classList.add("combat-row-active");
+      }
+
+      const nameWrap = document.createElement("div");
+      nameWrap.className = "combat-name";
+      if (entry.avatar) {
+        const avatar = document.createElement("div");
+        avatar.className = "combat-avatar";
+        avatar.style.backgroundImage = `url("${entry.avatar}")`;
+        nameWrap.appendChild(avatar);
+      }
+      const label = document.createElement("span");
+      label.textContent = entry.name;
+      nameWrap.appendChild(label);
+
+      const initWrap = document.createElement("div");
+      initWrap.className = "combat-initiative";
+      const modText = document.createElement("span");
+      modText.className = "combat-mod";
+      modText.textContent = `mod ${entry.mod >= 0 ? "+" : ""}${entry.mod}`;
+
+      const canEditInitiative =
+        isDM ||
+        (entry.type === "player" &&
+          state.tokens.some(
+            (token) => token.id === entry.id && (token.ownedBySelf || !token.owned)
+          ));
+
+      if (canEditInitiative && entry.type !== "other-monsters") {
+        const input = document.createElement("input");
+        input.type = "number";
+        input.className = "combat-initiative-input";
+        input.value = entry.initiative;
+        input.addEventListener("change", () => {
+          socket.emit("setCombatInitiative", {
+            entryId: entry.id,
+            initiative: input.value,
+          });
+        });
+        initWrap.appendChild(input);
+      } else {
+        const value = document.createElement("div");
+        value.className = "combat-initiative-value";
+        value.textContent = String(entry.initiative);
+        initWrap.appendChild(value);
+      }
+
+      if (entry.type !== "other-monsters") {
+        initWrap.appendChild(modText);
+      }
+
+      row.appendChild(nameWrap);
+      row.appendChild(initWrap);
+      combatTracker.appendChild(row);
+    });
+  }
+
+  function renderMonsterConfig() {
+    if (!isDM || !monsterConfigRow || !state || !state.monsterConfig) {
+      return;
+    }
+    monsterConfigRow.innerHTML = "";
+    ["green", "yellow", "red", "violet"].forEach((type) => {
+      const config = state.monsterConfig[type] || {};
+      const card = document.createElement("div");
+      card.className = "monster-config-card";
+
+      const title = document.createElement("div");
+      title.className = "monster-config-title";
+      title.textContent = `${type} monster`;
+
+      const preview = document.createElement("div");
+      preview.className = "monster-config-avatar";
+      if (config.avatar) {
+        preview.style.backgroundImage = `url("${config.avatar}")`;
+        preview.classList.add("has-avatar");
+      } else {
+        preview.textContent = type.slice(0, 1).toUpperCase();
+      }
+
+      const fileInput = document.createElement("input");
+      fileInput.type = "file";
+      fileInput.accept = "image/*";
+      fileInput.className = "monster-config-input";
+      fileInput.addEventListener("change", () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          return;
+        }
+        readImageFile(file)
+          .then((dataUrl) => {
+            socket.emit("setMonsterConfig", { type, avatar: dataUrl });
+          })
+          .catch(() => {
+            setMessage("That image could not be loaded.");
+          });
+      });
+
+      const uploadButton = document.createElement("button");
+      uploadButton.type = "button";
+      uploadButton.className = "monster-config-button";
+      uploadButton.textContent = config.avatar ? "Change icon" : "Upload icon";
+      uploadButton.addEventListener("click", () => {
+        fileInput.click();
+      });
+
+      const initWrap = document.createElement("label");
+      initWrap.className = "monster-config-init";
+      const initLabel = document.createElement("span");
+      initLabel.textContent = "Init mod";
+      const initInput = document.createElement("input");
+      initInput.type = "number";
+      initInput.value = Number.isFinite(config.initiativeMod)
+        ? config.initiativeMod
+        : 0;
+      initInput.addEventListener("change", () => {
+        socket.emit("setMonsterConfig", { type, initiativeMod: initInput.value });
+      });
+      initWrap.appendChild(initLabel);
+      initWrap.appendChild(initInput);
+
+      card.appendChild(title);
+      card.appendChild(preview);
+      card.appendChild(fileInput);
+      card.appendChild(uploadButton);
+      card.appendChild(initWrap);
+      monsterConfigRow.appendChild(card);
+    });
+  }
+
+  function updateActionButtons() {
+    if (monsterDelete) {
+      monsterDelete.disabled = !isDM || !state || !selectedMonsterId;
+    }
+    if (combatExit) {
+      combatExit.disabled = !isDM || !state || !state.combat;
+    }
   }
 
   function isAdjacent(from, to) {
@@ -370,25 +647,30 @@
             if (directions.length > 0) {
               const arrows = document.createElement("div");
               arrows.className = "block-arrows";
-              arrows.dataset.count = String(directions.length);
+              let usesMulti = false;
               if (
                 directions.length === 2 &&
                 directions.includes("up") &&
                 directions.includes("down")
               ) {
-                arrows.classList.add("block-arrows-vertical");
+                arrows.appendChild(createMultiArrowIcon("vertical"));
+                usesMulti = true;
               } else if (
                 directions.length === 2 &&
                 directions.includes("left") &&
                 directions.includes("right")
               ) {
-                arrows.classList.add("block-arrows-horizontal");
+                arrows.appendChild(createMultiArrowIcon("horizontal"));
+                usesMulti = true;
               } else if (directions.length === 4) {
-                arrows.classList.add("block-arrows-quad");
+                arrows.appendChild(createMultiArrowIcon("quad"));
+                usesMulti = true;
+              } else {
+                directions.forEach((dir) => {
+                  arrows.appendChild(createArrowIcon(dir));
+                });
               }
-              directions.forEach((dir) => {
-                arrows.appendChild(createArrowIcon(dir));
-              });
+              arrows.dataset.count = String(usesMulti ? 1 : directions.length);
               cell.appendChild(arrows);
             } else {
               content = "?";
@@ -445,7 +727,9 @@
                   return;
                 }
                 selectedTokenId = token.id;
+                selectedMonsterId = null;
                 renderGrid();
+                updateActionButtons();
               });
               tokenEl.addEventListener("dragstart", (event) => {
                 dragTokenId = token.id;
@@ -472,7 +756,38 @@
         if (monster) {
           const monsterEl = document.createElement("div");
           monsterEl.className = `monster-marker monster-${monster.type}`;
-          monsterEl.textContent = monster.type.slice(0, 1).toUpperCase();
+          if (monster.avatar) {
+            monsterEl.classList.add("monster-has-avatar");
+            monsterEl.style.backgroundImage = `url("${monster.avatar}")`;
+          } else {
+            monsterEl.textContent = monster.type.slice(0, 1).toUpperCase();
+          }
+          if (isDM) {
+            monsterEl.draggable = true;
+            monsterEl.addEventListener("click", () => {
+              selectedMonsterId = monster.id;
+              selectedTokenId = null;
+              renderGrid();
+              updateActionButtons();
+            });
+            monsterEl.addEventListener("dragstart", (event) => {
+              dragMonsterId = monster.id;
+              dragMonsterFrom = { x: monster.x, y: monster.y };
+              event.dataTransfer.setData("text/plain", monster.id);
+              event.dataTransfer.effectAllowed = "move";
+            });
+            monsterEl.addEventListener("dragend", () => {
+              dragMonsterId = null;
+              dragMonsterFrom = null;
+            });
+            monsterEl.addEventListener("contextmenu", (event) => {
+              event.preventDefault();
+              socket.emit("addMonsterToCombat", { monsterId: monster.id });
+            });
+          }
+          if (monster.id === selectedMonsterId) {
+            monsterEl.classList.add("monster-selected");
+          }
           cell.appendChild(monsterEl);
         }
 
@@ -493,10 +808,12 @@
         }
 
         cell.addEventListener("dragover", (event) => {
-          if (!dragTokenId || isFrozen()) {
+          const activeDrag = dragTokenId || dragMonsterId;
+          if (!activeDrag || isFrozen()) {
             return;
           }
-          if (dragFrom && !isAdjacent(dragFrom, { x, y })) {
+          const origin = dragTokenId ? dragFrom : dragMonsterFrom;
+          if (origin && !isAdjacent(origin, { x, y })) {
             return;
           }
           event.preventDefault();
@@ -508,25 +825,39 @@
         cell.addEventListener("drop", (event) => {
           event.preventDefault();
           cell.classList.remove("cell-drop");
-          if (!dragTokenId || isFrozen()) {
+          const activeDrag = dragTokenId || dragMonsterId;
+          if (!activeDrag || isFrozen()) {
             return;
           }
-          if (dragFrom && !isAdjacent(dragFrom, { x, y })) {
+          const origin = dragTokenId ? dragFrom : dragMonsterFrom;
+          if (origin && !isAdjacent(origin, { x, y })) {
             setMessage("Move one tile at a time.");
             return;
           }
-          socket.emit("moveToken", { tokenId: dragTokenId, to: { x, y } });
-          dragTokenId = null;
-          dragFrom = null;
+          if (dragTokenId) {
+            socket.emit("moveToken", { tokenId: dragTokenId, to: { x, y } });
+            dragTokenId = null;
+            dragFrom = null;
+          } else if (dragMonsterId) {
+            socket.emit("moveMonster", { monsterId: dragMonsterId, to: { x, y } });
+            dragMonsterId = null;
+            dragMonsterFrom = null;
+          }
         });
 
         cell.addEventListener("click", (event) => {
-          if (event.target && event.target.closest(".token-marker")) {
+          if (
+            event.target &&
+            (event.target.closest(".token-marker") ||
+              event.target.closest(".monster-marker"))
+          ) {
             return;
           }
-          if (selectedTokenId) {
+          if (selectedTokenId || selectedMonsterId) {
             selectedTokenId = null;
+            selectedMonsterId = null;
             renderGrid();
+            updateActionButtons();
           }
         });
 
@@ -535,18 +866,26 @@
     });
   }
 
-  function syncSelectedToken() {
-    if (!state || !selectedTokenId) {
+  function syncSelection() {
+    if (!state) {
       return;
     }
-    const token = state.tokens.find((entry) => entry.id === selectedTokenId);
-    if (!token || !canControlToken(token)) {
-      selectedTokenId = null;
+    if (selectedTokenId) {
+      const token = state.tokens.find((entry) => entry.id === selectedTokenId);
+      if (!token || !canControlToken(token)) {
+        selectedTokenId = null;
+      }
+    }
+    if (selectedMonsterId) {
+      const monster = state.monsters.find((entry) => entry.id === selectedMonsterId);
+      if (!monster || !isDM) {
+        selectedMonsterId = null;
+      }
     }
   }
 
-  function tryKeyboardMove(directionName) {
-    if (!state || !selectedTokenId || isFrozen()) {
+  function tryTokenMove(directionName) {
+    if (!state || !selectedTokenId) {
       return;
     }
     const token = state.tokens.find((entry) => entry.id === selectedTokenId);
@@ -581,13 +920,67 @@
     socket.emit("moveToken", { tokenId: token.id, to: target });
   }
 
+  function tryMonsterMove(directionName) {
+    if (!state || !selectedMonsterId || !isDM) {
+      return;
+    }
+    const monster = state.monsters.find((entry) => entry.id === selectedMonsterId);
+    if (!monster) {
+      selectedMonsterId = null;
+      return;
+    }
+    const dir = MOVE_DIRECTIONS.find((entry) => entry.name === directionName);
+    if (!dir) {
+      return;
+    }
+    const target = { x: monster.x + dir.dx, y: monster.y + dir.dy };
+    if (!state.tiles[target.y] || !state.tiles[target.y][target.x]) {
+      return;
+    }
+    const targetTile = state.tiles[target.y][target.x];
+    if (targetTile.type === "rock" || targetTile.type === "exit") {
+      return;
+    }
+    if (
+      targetTile.type === "block" &&
+      (!targetTile.directions || !targetTile.directions.includes(directionName))
+    ) {
+      return;
+    }
+    if (state.monsters.some((entry) => entry.id !== monster.id && entry.x === target.x && entry.y === target.y)) {
+      return;
+    }
+    socket.emit("moveMonster", { monsterId: monster.id, to: target });
+  }
+
+  function tryKeyboardMove(directionName) {
+    if (!state || isFrozen()) {
+      return;
+    }
+    if (selectedMonsterId) {
+      tryMonsterMove(directionName);
+      return;
+    }
+    if (selectedTokenId) {
+      tryTokenMove(directionName);
+    }
+  }
+
   function render() {
     if (!state) {
       return;
     }
-    syncSelectedToken();
-    renderRoster();
+    syncSelection();
+    if (editingTokenId && !state.tokens.some((token) => token.id === editingTokenId)) {
+      cancelTokenEdit();
+    }
+    if (!editingTokenId) {
+      renderRoster();
+    }
     renderGrid();
+    renderCombat();
+    renderMonsterConfig();
+    updateActionButtons();
     updateFrozenState();
     updateTrapOverlay();
     updateDmTrapAlert();
@@ -623,6 +1016,12 @@
   socket.on("announcement", (payload) => {
     if (payload && payload.message) {
       setMessage(payload.message);
+    }
+  });
+
+  socket.on("sound", (payload) => {
+    if (payload && payload.id) {
+      playSound(payload.id);
     }
   });
 
@@ -673,6 +1072,54 @@
         level: Number.parseInt(level, 10),
         seed: Number.parseInt(seed, 10),
       });
+    });
+  }
+
+  if (combatResort) {
+    combatResort.addEventListener("click", () => {
+      if (!isDM) {
+        return;
+      }
+      socket.emit("resortCombat");
+    });
+  }
+
+  if (combatPrev) {
+    combatPrev.addEventListener("click", () => {
+      if (!isDM) {
+        return;
+      }
+      socket.emit("retreatCombat");
+    });
+  }
+
+  if (combatNext) {
+    combatNext.addEventListener("click", () => {
+      if (!isDM) {
+        return;
+      }
+      socket.emit("advanceCombat");
+    });
+  }
+
+  if (combatExit) {
+    combatExit.addEventListener("click", () => {
+      if (!isDM) {
+        return;
+      }
+      socket.emit("exitCombat");
+    });
+  }
+
+  if (monsterDelete) {
+    monsterDelete.addEventListener("click", () => {
+      if (!isDM || !selectedMonsterId) {
+        return;
+      }
+      socket.emit("deleteMonster", { monsterId: selectedMonsterId });
+      selectedMonsterId = null;
+      updateActionButtons();
+      renderGrid();
     });
   }
 

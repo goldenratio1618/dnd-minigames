@@ -35,6 +35,10 @@
           <input id="seed-input" type="number" value="42" />
           <button id="start-game">Generate level</button>
         </div>
+        <div class="monster-config" id="monster-config">
+          <div class="monster-config-header">Monster loadout</div>
+          <div class="monster-config-row" id="monster-config-row"></div>
+        </div>
         <div id="trap-alert" class="trap-alert hidden">
           <div class="trap-alert-message" id="trap-message"></div>
           <button id="trap-confirm">Confirm trap</button>
@@ -45,6 +49,19 @@
         <section class="mine-panel">
           <div class="mine-level" id="level-display">Level 1</div>
           <div class="mine-roster" id="token-roster"></div>
+          <div class="mine-combat" id="combat-panel">
+            <div class="combat-header">
+              <div class="combat-title">Combat tracker</div>
+            </div>
+            <div class="combat-tracker" id="combat-tracker"></div>
+            <div class="combat-controls">
+              <button type="button" id="combat-resort">Re-sort</button>
+              <button type="button" id="combat-prev">Prev</button>
+              <button type="button" id="combat-next">Next</button>
+              <button type="button" id="combat-exit">Exit</button>
+              <button type="button" id="monster-delete">Delete</button>
+            </div>
+          </div>
           <div class="mine-legend">
             <div class="legend-title">Legend</div>
             <div class="legend-grid">
