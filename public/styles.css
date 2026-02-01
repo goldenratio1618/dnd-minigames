@@ -181,6 +181,16 @@ body::after {
   cursor: pointer;
 }
 
+.attempts-display {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+}
+
 .solver-hidden {
   display: none;
 }
@@ -1010,6 +1020,10 @@ body.loaded .mine-board {
   gap: 2px;
   --cell-size: clamp(26px, 3.2vw, 44px);
   width: max-content;
+}
+
+.mine-grid.solver-playing {
+  pointer-events: none;
 }
 
 .mine-cell {

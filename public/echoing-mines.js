@@ -25,9 +25,16 @@
   const startGameButton = document.getElementById("start-game");
   const levelInput = document.getElementById("level-input");
   const seedInput = document.getElementById("seed-input");
+  const solveLevelButton = document.getElementById("solve-level");
+  const generationAttemptsEl = document.getElementById("generation-attempts");
+  const saveMapButton = document.getElementById("save-map");
+  const loadMapButton = document.getElementById("load-map-button");
+  const loadMapSelect = document.getElementById("load-map-select");
 
   const defaultMessage = messageBar ? messageBar.innerHTML : "";
+  const SAVE_KEY = "echoingMinesSavedMaps";
 
+  let liveState = null;
   let state = null;
   let initialRender = true;
   let messageTimeout = null;
@@ -39,6 +46,14 @@
   let selectedMonsterId = null;
   let dragMonsterId = null;
   let dragMonsterFrom = null;
+  let savedMaps = [];
+  const solverPlayback = {
+    active: false,
+    timer: null,
+    index: 0,
+    moves: [],
+    state: null,
+  };
 
   const DIRECTION_ORDER = ["up", "right", "down", "left"];
   const SOUND_FILES = {
@@ -184,6 +199,10 @@
     return !isDM && state && state.pendingTrap && state.pendingTrap.active;
   }
 
+  function isInteractionLocked() {
+    return solverPlayback.active || isFrozen();
+  }
+
   function updateFrozenState() {
     if (isFrozen()) {
       document.body.classList.add("frozen");
@@ -216,6 +235,326 @@
       dmTrapAlert.classList.add("hidden");
       dmTrapMessage.textContent = "";
     }
+  }
+
+  function updateSolverControls() {
+    if (!isDM || !solveLevelButton) {
+      return;
+    }
+    const current = liveState || state;
+    const available =
+      current &&
+      current.solver &&
+      Array.isArray(current.solver.moves) &&
+      current.solver.moves.length > 0;
+    solveLevelButton.disabled = !available || solverPlayback.active;
+    solveLevelButton.textContent = solverPlayback.active ? "Solving..." : "Solve level";
+  }
+
+  function updateGenerationAttempts() {
+    if (!generationAttemptsEl) {
+      return;
+    }
+    const current = liveState || state;
+    const attempts =
+      current && Number.isFinite(current.generationAttempts)
+        ? current.generationAttempts
+        : 0;
+    generationAttemptsEl.textContent = String(attempts);
+  }
+
+  function loadSavedMaps() {
+    if (!isDM) {
+      return;
+    }
+    try {
+      const stored = localStorage.getItem(SAVE_KEY);
+      savedMaps = stored ? JSON.parse(stored) : [];
+    } catch (error) {
+      savedMaps = [];
+    }
+  }
+
+  function persistSavedMaps() {
+    if (!isDM) {
+      return;
+    }
+    localStorage.setItem(SAVE_KEY, JSON.stringify(savedMaps));
+  }
+
+  function refreshSavedMaps() {
+    if (!loadMapSelect) {
+      return;
+    }
+    loadMapSelect.innerHTML = "";
+    savedMaps.forEach((entry) => {
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = entry.name;
+      loadMapSelect.appendChild(option);
+    });
+    if (loadMapButton) {
+      loadMapButton.disabled = savedMaps.length === 0;
+    }
+  }
+
+  function normalizeSnapshotTile(tile) {
+    if (!tile || !tile.type) {
+      return { type: "rock", uncovered: false };
+    }
+    const uncovered = Boolean(tile.uncovered);
+    if (tile.type === "block") {
+      return {
+        type: "block",
+        uncovered,
+        directions: Array.isArray(tile.directions) ? tile.directions.slice() : [],
+      };
+    }
+    if (tile.type === "treasure") {
+      return {
+        type: "treasure",
+        uncovered,
+        value: Number.isFinite(tile.value) ? tile.value : 0,
+      };
+    }
+    if (tile.type === "trap") {
+      return {
+        type: "trap",
+        uncovered,
+        message: typeof tile.message === "string" ? tile.message : "",
+      };
+    }
+    if (tile.type === "exit") {
+      return { type: "exit", uncovered };
+    }
+    if (tile.type === "empty") {
+      return { type: "empty", uncovered };
+    }
+    return { type: "rock", uncovered };
+  }
+
+  function buildSnapshot(current) {
+    return {
+      level: current.level,
+      seed: current.seed,
+      width: current.width,
+      height: current.height,
+      startArea: current.startArea,
+      exit: current.exit,
+      generationAttempts: current.generationAttempts || 1,
+      solver: current.solver || null,
+      tiles: current.tiles.map((row) => row.map((tile) => normalizeSnapshotTile(tile))),
+      monsters: Array.isArray(current.monsters)
+        ? current.monsters.map((monster) => ({
+            id: monster.id,
+            type: monster.type,
+            x: monster.x,
+            y: monster.y,
+          }))
+        : [],
+    };
+  }
+
+  function inBounds(x, y, width, height) {
+    return x >= 0 && x < width && y >= 0 && y < height;
+  }
+
+  function buildSolverPlaybackState(current, solver) {
+    const tiles = current.tiles.map((row) =>
+      row.map((tile) => {
+        if (!tile || !tile.type) {
+          return { type: "rock", uncovered: false, visible: true };
+        }
+        if (tile.type === "block") {
+          return {
+            type: "block",
+            uncovered: tile.uncovered,
+            directions: tile.directions || [],
+            visible: true,
+          };
+        }
+        if (tile.type === "rock") {
+          return { type: "rock", uncovered: tile.uncovered, visible: true };
+        }
+        if (tile.type === "exit") {
+          return { type: "exit", uncovered: tile.uncovered, visible: true, exit: true };
+        }
+        return { type: "empty", uncovered: tile.uncovered, visible: true };
+      })
+    );
+    const fallbackStart = current.startArea
+      ? { x: current.startArea.x + 1, y: current.startArea.y + 1 }
+      : { x: 1, y: 1 };
+    const start = solver && solver.start ? solver.start : fallbackStart;
+    const solverToken = {
+      id: "solver-preview",
+      name: "Solve",
+      ownerId: null,
+      gold: 0,
+      avatar: "",
+      initiativeMod: 0,
+      x: start.x,
+      y: start.y,
+      lastMoveAt: 0,
+      owned: true,
+      ownedBySelf: true,
+    };
+    return {
+      ...current,
+      tiles,
+      tokens: [solverToken],
+      monsters: [],
+      combat: null,
+      pendingTrap: null,
+    };
+  }
+
+  function pushSolverBlocks(playbackState, startPos, dir) {
+    const tiles = playbackState.tiles;
+    const width = playbackState.width;
+    const height = playbackState.height;
+    const chain = [];
+    let cx = startPos.x;
+    let cy = startPos.y;
+
+    while (inBounds(cx, cy, width, height)) {
+      const tile = tiles[cy][cx];
+      if (tile.type !== "block") {
+        break;
+      }
+      if (!tile.directions || !tile.directions.includes(dir.name)) {
+        return false;
+      }
+      chain.push({
+        x: cx,
+        y: cy,
+        uncovered: tile.uncovered,
+        directions: tile.directions,
+      });
+      cx += dir.dx;
+      cy += dir.dy;
+    }
+
+    if (!inBounds(cx, cy, width, height)) {
+      return false;
+    }
+    const destination = tiles[cy][cx];
+    if (destination.type !== "empty") {
+      return false;
+    }
+
+    for (let i = chain.length - 1; i >= 0; i -= 1) {
+      const block = chain[i];
+      const destX = block.x + dir.dx;
+      const destY = block.y + dir.dy;
+      tiles[destY][destX] = {
+        type: "block",
+        uncovered: block.uncovered,
+        directions: block.directions,
+      };
+    }
+    const origin = chain[0];
+    tiles[origin.y][origin.x] = { type: "empty", uncovered: true };
+    return true;
+  }
+
+  function applySolverMove(playbackState, directionName) {
+    const token = playbackState.tokens[0];
+    if (!token) {
+      return false;
+    }
+    const dir = MOVE_DIRECTIONS.find((entry) => entry.name === directionName);
+    if (!dir) {
+      return false;
+    }
+    const target = { x: token.x + dir.dx, y: token.y + dir.dy };
+    if (!inBounds(target.x, target.y, playbackState.width, playbackState.height)) {
+      return false;
+    }
+    const targetTile = playbackState.tiles[target.y][target.x];
+    if (targetTile.type === "rock") {
+      return false;
+    }
+    if (targetTile.type === "block") {
+      if (!pushSolverBlocks(playbackState, target, dir)) {
+        return false;
+      }
+    }
+    token.x = target.x;
+    token.y = target.y;
+    playbackState.tiles[target.y][target.x].uncovered = true;
+    return true;
+  }
+
+  function stopSolverPlayback(message) {
+    if (solverPlayback.timer) {
+      clearTimeout(solverPlayback.timer);
+      solverPlayback.timer = null;
+    }
+    solverPlayback.active = false;
+    solverPlayback.index = 0;
+    solverPlayback.moves = [];
+    solverPlayback.state = null;
+    if (gridEl) {
+      gridEl.classList.remove("solver-playing");
+    }
+    if (message) {
+      setMessage(message);
+    }
+    state = liveState;
+    render();
+    updateSolverControls();
+  }
+
+  function stepSolverPlayback() {
+    if (!solverPlayback.active) {
+      return;
+    }
+    if (solverPlayback.index >= solverPlayback.moves.length) {
+      stopSolverPlayback("Solver demo complete.");
+      return;
+    }
+    const directionName = solverPlayback.moves[solverPlayback.index];
+    solverPlayback.index += 1;
+    const ok = applySolverMove(solverPlayback.state, directionName);
+    if (!ok) {
+      stopSolverPlayback("Solver demo halted.");
+      return;
+    }
+    render();
+    solverPlayback.timer = setTimeout(stepSolverPlayback, 220);
+  }
+
+  function startSolverPlayback() {
+    if (!isDM || solverPlayback.active) {
+      return;
+    }
+    const current = liveState || state;
+    if (!current || !current.solver || !Array.isArray(current.solver.moves)) {
+      setMessage("No solver path available.");
+      return;
+    }
+    const moves = current.solver.moves
+      .map((move) => (typeof move === "string" ? move : move && move.dir))
+      .filter(Boolean);
+    if (moves.length === 0) {
+      setMessage("No solver path available.");
+      return;
+    }
+    solverPlayback.active = true;
+    solverPlayback.index = 0;
+    solverPlayback.moves = moves;
+    solverPlayback.state = buildSolverPlaybackState(current, current.solver);
+    state = solverPlayback.state;
+    if (gridEl) {
+      gridEl.classList.add("solver-playing");
+    }
+    selectedTokenId = null;
+    selectedMonsterId = null;
+    updateActionButtons();
+    updateSolverControls();
+    render();
+    solverPlayback.timer = setTimeout(stepSolverPlayback, 250);
   }
 
   function formatBlockDirections(directions) {
@@ -586,10 +925,10 @@
 
   function updateActionButtons() {
     if (monsterDelete) {
-      monsterDelete.disabled = !isDM || !state || !selectedMonsterId;
+      monsterDelete.disabled = !isDM || !state || !selectedMonsterId || solverPlayback.active;
     }
     if (combatExit) {
-      combatExit.disabled = !isDM || !state || !state.combat;
+      combatExit.disabled = !isDM || !state || !state.combat || solverPlayback.active;
     }
   }
 
@@ -607,6 +946,7 @@
       return;
     }
     gridEl.innerHTML = "";
+    gridEl.classList.toggle("solver-playing", solverPlayback.active);
     gridEl.style.gridTemplateColumns = `repeat(${state.width}, var(--cell-size))`;
 
     const tokenMap = new Map();
@@ -715,11 +1055,11 @@
                 : "?";
             }
             const draggable =
-              !isFrozen() && (isDM || token.ownedBySelf || !token.owned);
+              !isInteractionLocked() && (isDM || token.ownedBySelf || !token.owned);
             tokenEl.draggable = draggable;
             if (draggable) {
               tokenEl.addEventListener("click", () => {
-                if (isFrozen()) {
+                if (isInteractionLocked()) {
                   return;
                 }
                 if (!canControlToken(token)) {
@@ -762,7 +1102,7 @@
           } else {
             monsterEl.textContent = monster.type.slice(0, 1).toUpperCase();
           }
-          if (isDM) {
+          if (isDM && !solverPlayback.active) {
             monsterEl.draggable = true;
             monsterEl.addEventListener("click", () => {
               selectedMonsterId = monster.id;
@@ -784,6 +1124,8 @@
               event.preventDefault();
               socket.emit("addMonsterToCombat", { monsterId: monster.id });
             });
+          } else if (isDM) {
+            monsterEl.draggable = false;
           }
           if (monster.id === selectedMonsterId) {
             monsterEl.classList.add("monster-selected");
@@ -809,7 +1151,7 @@
 
         cell.addEventListener("dragover", (event) => {
           const activeDrag = dragTokenId || dragMonsterId;
-          if (!activeDrag || isFrozen()) {
+          if (!activeDrag || isInteractionLocked()) {
             return;
           }
           const origin = dragTokenId ? dragFrom : dragMonsterFrom;
@@ -826,7 +1168,7 @@
           event.preventDefault();
           cell.classList.remove("cell-drop");
           const activeDrag = dragTokenId || dragMonsterId;
-          if (!activeDrag || isFrozen()) {
+          if (!activeDrag || isInteractionLocked()) {
             return;
           }
           const origin = dragTokenId ? dragFrom : dragMonsterFrom;
@@ -885,7 +1227,7 @@
   }
 
   function tryTokenMove(directionName) {
-    if (!state || !selectedTokenId) {
+    if (!state || !selectedTokenId || solverPlayback.active) {
       return;
     }
     const token = state.tokens.find((entry) => entry.id === selectedTokenId);
@@ -921,7 +1263,7 @@
   }
 
   function tryMonsterMove(directionName) {
-    if (!state || !selectedMonsterId || !isDM) {
+    if (!state || !selectedMonsterId || !isDM || solverPlayback.active) {
       return;
     }
     const monster = state.monsters.find((entry) => entry.id === selectedMonsterId);
@@ -954,7 +1296,7 @@
   }
 
   function tryKeyboardMove(directionName) {
-    if (!state || isFrozen()) {
+    if (!state || isInteractionLocked()) {
       return;
     }
     if (selectedMonsterId) {
@@ -984,6 +1326,8 @@
     updateFrozenState();
     updateTrapOverlay();
     updateDmTrapAlert();
+    updateGenerationAttempts();
+    updateSolverControls();
     if (levelDisplay) {
       levelDisplay.textContent = `Level ${state.level}`;
     }
@@ -1003,8 +1347,14 @@
   });
 
   socket.on("state", (newState) => {
-    state = newState;
-    render();
+    liveState = newState;
+    if (!solverPlayback.active) {
+      state = newState;
+      render();
+    } else {
+      updateGenerationAttempts();
+      updateSolverControls();
+    }
   });
 
   socket.on("actionError", (payload) => {
@@ -1031,8 +1381,16 @@
     }
   });
 
+  if (isDM) {
+    loadSavedMaps();
+    refreshSavedMaps();
+  }
+
   window.addEventListener("keydown", (event) => {
     if (editingTokenId) {
+      return;
+    }
+    if (solverPlayback.active) {
       return;
     }
     const target = event.target;
@@ -1066,12 +1424,87 @@
 
   if (isDM && startGameButton) {
     startGameButton.addEventListener("click", () => {
+      if (solverPlayback.active) {
+        stopSolverPlayback();
+      }
       const level = levelInput ? levelInput.value : 1;
       const seed = seedInput ? seedInput.value : 42;
       socket.emit("startGame", {
         level: Number.parseInt(level, 10),
         seed: Number.parseInt(seed, 10),
       });
+    });
+  }
+
+  if (isDM && solveLevelButton) {
+    solveLevelButton.addEventListener("click", () => {
+      if (solverPlayback.active) {
+        return;
+      }
+      if (!window.confirm("Demonstrate the solution?")) {
+        return;
+      }
+      startSolverPlayback();
+    });
+  }
+
+  if (isDM && saveMapButton) {
+    saveMapButton.addEventListener("click", () => {
+      const current = liveState || state;
+      if (!current) {
+        return;
+      }
+      const defaultName = `Level ${current.level} (${current.width}x${current.height})`;
+      const name = window.prompt("Save map as:", defaultName);
+      if (!name) {
+        return;
+      }
+      const trimmed = name.trim();
+      if (!trimmed) {
+        return;
+      }
+      const snapshot = buildSnapshot(current);
+      const entry = {
+        id: `${Date.now()}`,
+        name: trimmed,
+        savedAt: Date.now(),
+        snapshot,
+      };
+      const existingIndex = savedMaps.findIndex((saved) => saved.name === trimmed);
+      if (existingIndex !== -1) {
+        if (!window.confirm(`Overwrite \"${trimmed}\"?`)) {
+          return;
+        }
+        savedMaps[existingIndex] = entry;
+      } else {
+        savedMaps.push(entry);
+      }
+      persistSavedMaps();
+      refreshSavedMaps();
+      if (loadMapSelect) {
+        loadMapSelect.value = entry.id;
+      }
+      setMessage(`Saved map \"${trimmed}\".`);
+    });
+  }
+
+  if (isDM && loadMapButton) {
+    loadMapButton.addEventListener("click", () => {
+      if (!loadMapSelect) {
+        return;
+      }
+      const selectedId = loadMapSelect.value;
+      const entry = savedMaps.find((saved) => saved.id === selectedId);
+      if (!entry) {
+        return;
+      }
+      if (!window.confirm(`Load map \"${entry.name}\"?`)) {
+        return;
+      }
+      if (solverPlayback.active) {
+        stopSolverPlayback();
+      }
+      socket.emit("loadMap", entry.snapshot);
     });
   }
 
@@ -1132,6 +1565,9 @@
       if (!isDM) {
         setMessage("Only the DM can reset the level.");
         return;
+      }
+      if (solverPlayback.active) {
+        stopSolverPlayback();
       }
       socket.emit("resetGame");
     });

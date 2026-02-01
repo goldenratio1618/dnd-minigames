@@ -33,7 +33,17 @@
           <input id="level-input" type="number" min="1" value="1" />
           <label for="seed-input">Seed</label>
           <input id="seed-input" type="number" value="42" />
-          <button id="start-game">Generate level</button>
+          <button id="start-game" type="button">Generate level</button>
+          <button id="solve-level" type="button">Solve level</button>
+          <div class="attempts-display">
+            Attempts: <span id="generation-attempts">0</span>
+          </div>
+        </div>
+        <div class="panel-row">
+          <button id="save-map" type="button">Save map</button>
+          <label for="load-map-select">Saved maps</label>
+          <select id="load-map-select"></select>
+          <button id="load-map-button" type="button">Load map</button>
         </div>
         <div class="monster-config" id="monster-config">
           <div class="monster-config-header">Monster loadout</div>

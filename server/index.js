@@ -613,6 +613,19 @@ minesNamespace.on("connection", (socket) => {
     broadcastMinesState();
   });
 
+  socket.on("loadMap", (payload) => {
+    if (socket.data.role !== "dm") {
+      return;
+    }
+    const loaded = minesGame.loadSnapshot(minesState, payload);
+    if (!loaded) {
+      socket.emit("actionError", { message: "Could not load that map." });
+      return;
+    }
+    minesState = loaded;
+    broadcastMinesState();
+  });
+
   socket.on("moveToken", (payload) => {
     const result = minesGame.applyMove(minesState, payload, {
       role: socket.data.role || "player",

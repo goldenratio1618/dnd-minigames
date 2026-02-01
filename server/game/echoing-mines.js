@@ -9,6 +9,8 @@ const VIOLET_MIN_SPEED = 0.5;
 const VIOLET_MAX_SPEED = 6;
 const VIOLET_FAR_DISTANCE = 12;
 
+const { solveBlockPuzzle } = require("./echoing-mines-solver");
+
 const MONSTER_TYPES = ["green", "yellow", "red", "violet"];
 
 const DIRECTIONS = [
@@ -17,6 +19,13 @@ const DIRECTIONS = [
   { name: "left", dx: -1, dy: 0 },
   { name: "right", dx: 1, dy: 0 },
 ];
+
+const OPPOSITE_DIRECTION = {
+  up: "down",
+  down: "up",
+  left: "right",
+  right: "left",
+};
 
 const TRAP_MESSAGES = [
   "A rune flares and your pulse slows.",
@@ -331,7 +340,7 @@ function chooseTreasureValue(rng, distance, maxDistance) {
   return rollDice(rng, 3, 20);
 }
 
-function generateLevelOnce({ level, seed, width, height }) {
+function generateBaseLayout({ level, seed, width, height }) {
   const rng = createRng(seed + level * 997);
   const tiles = buildGrid(width, height, createRockTile);
   const startArea = { x: 1, y: 1, size: START_SIZE };
@@ -380,9 +389,12 @@ function generateLevelOnce({ level, seed, width, height }) {
   );
   shuffle(blockTargets, rng);
 
+  const areaScale = Math.sqrt(
+    (width * height) / (DEFAULT_WIDTH * DEFAULT_HEIGHT)
+  );
   const blockCount = Math.min(
-    Math.floor(mainPath.length / 3),
-    3 + Math.floor(level * 1.5)
+    Math.floor(mainPath.length / 2),
+    Math.max(3, Math.floor((4 + level * 2) * areaScale))
   );
 
   const blocks = [];
@@ -417,19 +429,26 @@ function generateLevelOnce({ level, seed, width, height }) {
     tiles[pocketY][pocketX] = createEmptyTile();
 
     let directions = [pocket.name];
-    if (rng() < 0.2) {
+    const pathDir = pathDirections.get(coordKey(pos.x, pos.y));
+    const oppositeDir = pathDir ? OPPOSITE_DIRECTION[pathDir] : null;
+    if (oppositeDir && rng() < 0.65) {
+      directions.push(oppositeDir);
+    }
+    if (pathDir && rng() < 0.35) {
+      directions.push(pathDir);
+    }
+
+    const styleRoll = rng();
+    if (styleRoll < 0.15) {
       directions = ["up", "down", "left", "right"];
-    } else if (rng() < 0.35) {
+    } else if (styleRoll < 0.35) {
       if (pocket.name === "left" || pocket.name === "right") {
         directions = ["left", "right"];
       } else {
         directions = ["up", "down"];
       }
     }
-    const pathDir = pathDirections.get(coordKey(pos.x, pos.y));
-    if (pathDir && !directions.includes(pathDir)) {
-      directions.push(pathDir);
-    }
+    directions = [...new Set(directions)];
 
     tiles[pos.y][pos.x] = {
       type: "block",
@@ -439,13 +458,45 @@ function generateLevelOnce({ level, seed, width, height }) {
     blocks.push({ x: pos.x, y: pos.y });
   }
 
+  return {
+    tiles,
+    width,
+    height,
+    startArea,
+    startCenter,
+    exit,
+    rooms,
+    mainPath,
+    pathSet,
+    rng,
+  };
+}
+
+function populateLevelFeatures(base, { level, usedSquares }) {
+  const {
+    tiles,
+    width,
+    height,
+    startArea,
+    startCenter,
+    exit,
+    rooms,
+    pathSet,
+    rng,
+  } = base;
+  const reserved = usedSquares || new Set();
+
   const trapCandidates = [];
   for (let y = 1; y < height - 1; y += 1) {
     for (let x = 1; x < width - 1; x += 1) {
+      const key = coordKey(x, y);
       if (isStartArea(x, y, startArea)) {
         continue;
       }
-      if (pathSet.has(coordKey(x, y))) {
+      if (pathSet.has(key)) {
+        continue;
+      }
+      if (reserved.has(key)) {
         continue;
       }
       if (tiles[y][x].type !== "empty") {
@@ -458,7 +509,14 @@ function generateLevelOnce({ level, seed, width, height }) {
     }
   }
   shuffle(trapCandidates, rng);
-  const trapCount = Math.min(trapCandidates.length, 6 + level * 2);
+  const trapBase = 3 + Math.floor(Math.sqrt(level) * 3);
+  const areaScale = Math.sqrt(
+    (width * height) / (DEFAULT_WIDTH * DEFAULT_HEIGHT)
+  );
+  const trapCount = Math.min(
+    trapCandidates.length,
+    Math.floor(trapBase * areaScale)
+  );
   for (let i = 0; i < trapCount; i += 1) {
     const pos = trapCandidates[i];
     tiles[pos.y][pos.x] = {
@@ -686,269 +744,138 @@ function monstersHaveMobility(state, minTiles) {
   );
 }
 
-class MinHeap {
-  constructor() {
-    this.data = [];
-  }
+function generateLevel({ level, seed, width, height }) {
+  const minPushes = 5 * level;
+  const minUnintuitive = 2 * level;
+  const attemptsPerSize = 30;
+  const maxSizeBoost = 6;
+  const sizeStep = 2;
+  const minMonsterTiles = 5;
+  const quickSolveLimit = 80000 + level * 4000;
+  const fullSolveLimit = 180000 + level * 12000;
+  const maxTotalAttempts = attemptsPerSize * (maxSizeBoost + 1) * 3;
 
-  push(item) {
-    this.data.push(item);
-    let index = this.data.length - 1;
-    while (index > 0) {
-      const parent = Math.floor((index - 1) / 2);
-      if (this.data[parent].priority <= item.priority) {
-        break;
-      }
-      this.data[index] = this.data[parent];
-      index = parent;
+  let attempts = 0;
+  let sizeBoost = 0;
+  let bestCandidate = null;
+  let bestScore = -Infinity;
+
+  const bumpSize = () => {
+    if (attempts % attemptsPerSize === 0) {
+      sizeBoost = Math.min(sizeBoost + 1, maxSizeBoost);
     }
-    this.data[index] = item;
-  }
-
-  pop() {
-    if (this.data.length === 0) {
-      return null;
-    }
-    const root = this.data[0];
-    const last = this.data.pop();
-    if (this.data.length > 0) {
-      this.data[0] = last;
-      let index = 0;
-      while (true) {
-        const left = index * 2 + 1;
-        const right = index * 2 + 2;
-        let smallest = index;
-        if (left < this.data.length && this.data[left].priority < this.data[smallest].priority) {
-          smallest = left;
-        }
-        if (right < this.data.length && this.data[right].priority < this.data[smallest].priority) {
-          smallest = right;
-        }
-        if (smallest === index) {
-          break;
-        }
-        [this.data[index], this.data[smallest]] = [this.data[smallest], this.data[index]];
-        index = smallest;
-      }
-    }
-    return root;
-  }
-
-  isEmpty() {
-    return this.data.length === 0;
-  }
-}
-
-function buildBlockList(tiles) {
-  const blocks = [];
-  tiles.forEach((row, y) => {
-    row.forEach((tile, x) => {
-      if (tile.type === "block") {
-        blocks.push({ x, y, directions: tile.directions || [] });
-      }
-    });
-  });
-  return blocks;
-}
-
-function estimateMinPushes({
-  tiles,
-  width,
-  height,
-  startArea,
-  exit,
-  maxPushes = Infinity,
-  requireSolution = false,
-} = {}) {
-  const blocks = buildBlockList(tiles);
-  const blockPositions = blocks.map((block) => block.y * width + block.x);
-  const exitIndex = exit.y * width + exit.x;
-  const maxPushesLimit = Number.isFinite(maxPushes) ? maxPushes : null;
-
-  const isWall = (x, y) => tiles[y][x].type === "rock";
-  const isBlockedForBlock = (x, y) => {
-    const type = tiles[y][x].type;
-    return type === "rock" || type === "trap" || type === "exit";
   };
 
-  const stateKey = (playerIndex, positions) =>
-    `${playerIndex}|${positions.join(",")}`;
+  const clearBlocks = (layout) => {
+    layout.tiles.forEach((row, y) => {
+      row.forEach((tile, x) => {
+        if (tile.type === "block") {
+          layout.tiles[y][x] = createEmptyTile();
+        }
+      });
+    });
+    return layout;
+  };
 
-  const heap = new MinHeap();
-  const dist = new Map();
+  const finalizeCandidate = (candidate) => {
+    const populated = populateLevelFeatures(candidate.base, {
+      level,
+      usedSquares: candidate.solution.usedSquares,
+    });
+    return {
+      ...populated,
+      solver: {
+        moves: candidate.solution.moves,
+        start: candidate.solution.start,
+        pushes: candidate.solution.pushes,
+        unintuitivePushes: candidate.solution.unintuitivePushes,
+      },
+      generationAttempts: attempts,
+    };
+  };
 
-  for (let y = startArea.y; y < startArea.y + startArea.size; y += 1) {
-    for (let x = startArea.x; x < startArea.x + startArea.size; x += 1) {
-      const startIndex = y * width + x;
-      const key = stateKey(startIndex, blockPositions);
-      if (!dist.has(key)) {
-        dist.set(key, 0);
-        heap.push({ priority: 0, playerIndex: startIndex, positions: blockPositions });
+  while (true) {
+    if (attempts >= maxTotalAttempts && bestCandidate) {
+      return finalizeCandidate(bestCandidate);
+    }
+    if (attempts >= maxTotalAttempts && !bestCandidate) {
+      const fallbackBase = clearBlocks(
+        generateBaseLayout({
+          level,
+          seed: seed + attempts * 997,
+          width: width + sizeBoost * sizeStep,
+          height: height + sizeBoost * sizeStep,
+        })
+      );
+      const fallbackSolution = solveBlockPuzzle({
+        ...fallbackBase,
+        maxStates: fullSolveLimit,
+      });
+      if (fallbackSolution) {
+        return finalizeCandidate({ base: fallbackBase, solution: fallbackSolution });
       }
     }
-  }
+    const attemptSeed = seed + attempts * 173;
+    const attemptWidth = width + sizeBoost * sizeStep;
+    const attemptHeight = height + sizeBoost * sizeStep;
+    const base = generateBaseLayout({
+      level,
+      seed: attemptSeed,
+      width: attemptWidth,
+      height: attemptHeight,
+    });
+    attempts += 1;
 
-  while (!heap.isEmpty()) {
-    const current = heap.pop();
-    if (!current) {
-      break;
-    }
-    const currentKey = stateKey(current.playerIndex, current.positions);
-    const currentDist = dist.get(currentKey);
-    if (currentDist !== current.priority) {
+    const quick = solveBlockPuzzle({
+      ...base,
+      maxPushes: Math.max(0, minPushes - 1),
+      maxStates: quickSolveLimit,
+    });
+    if (quick) {
+      bumpSize();
       continue;
     }
-    if (current.playerIndex === exitIndex) {
-      return currentDist;
-    }
-    if (!requireSolution && maxPushesLimit !== null && currentDist > maxPushesLimit) {
-      return maxPushesLimit + 1;
-    }
 
-    const blockMap = new Map();
-    current.positions.forEach((pos, index) => {
-      blockMap.set(pos, index);
+    const solution = solveBlockPuzzle({
+      ...base,
+      maxStates: fullSolveLimit,
     });
-
-    const px = current.playerIndex % width;
-    const py = Math.floor(current.playerIndex / width);
-
-    for (const dir of DIRECTIONS) {
-      const nx = px + dir.dx;
-      const ny = py + dir.dy;
-      if (!inBounds(nx, ny, width, height)) {
-        continue;
-      }
-      if (isWall(nx, ny)) {
-        continue;
-      }
-
-      const nextIndex = ny * width + nx;
-      const blockIndex = blockMap.get(nextIndex);
-
-      if (blockIndex === undefined) {
-        const nextKey = stateKey(nextIndex, current.positions);
-        const nextDist = currentDist;
-        if (!dist.has(nextKey) || nextDist < dist.get(nextKey)) {
-          dist.set(nextKey, nextDist);
-          heap.push({ priority: nextDist, playerIndex: nextIndex, positions: current.positions });
-        }
-        continue;
-      }
-
-      const chain = [];
-      let cx = nx;
-      let cy = ny;
-      let valid = true;
-      while (true) {
-        const chainIndex = blockMap.get(cy * width + cx);
-        if (chainIndex === undefined) {
-          break;
-        }
-        const block = blocks[chainIndex];
-        if (!block.directions || !block.directions.includes(dir.name)) {
-          valid = false;
-          break;
-        }
-        chain.push(chainIndex);
-        cx += dir.dx;
-        cy += dir.dy;
-        if (!inBounds(cx, cy, width, height)) {
-          valid = false;
-          break;
-        }
-      }
-      if (!valid) {
-        continue;
-      }
-      if (!inBounds(cx, cy, width, height)) {
-        continue;
-      }
-      if (isBlockedForBlock(cx, cy)) {
-        continue;
-      }
-      if (cx === exit.x && cy === exit.y) {
-        continue;
-      }
-      if (blockMap.has(cy * width + cx)) {
-        continue;
-      }
-
-      const updated = current.positions.slice();
-      chain.forEach((index) => {
-        const pos = current.positions[index];
-        const x = pos % width;
-        const y = Math.floor(pos / width);
-        updated[index] = (y + dir.dy) * width + (x + dir.dx);
-      });
-      const nextKey = stateKey(nextIndex, updated);
-      const nextDist = currentDist + 1;
-      if (!requireSolution && maxPushesLimit !== null && nextDist > maxPushesLimit) {
-        continue;
-      }
-      if (!dist.has(nextKey) || nextDist < dist.get(nextKey)) {
-        dist.set(nextKey, nextDist);
-        heap.push({ priority: nextDist, playerIndex: nextIndex, positions: updated });
-      }
+    if (!solution) {
+      bumpSize();
+      continue;
     }
-  }
 
-  if (!requireSolution && maxPushesLimit !== null) {
-    return maxPushesLimit + 1;
-  }
-  return Infinity;
-}
+    const score = solution.pushes * 5 + solution.unintuitivePushes * 12;
+    if (score > bestScore) {
+      bestScore = score;
+      bestCandidate = { base, solution };
+    }
 
-function generateLevel({ level, seed, width, height }) {
-  const targetPushes = 2 * level;
-  const maxAttempts = 120;
-  const minMonsterTiles = 5;
-  let bestCandidate = null;
-  let bestPushes = -Infinity;
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const attemptSeed = seed + attempt * 173;
-    const generated = generateLevelOnce({
+    if (solution.pushes < minPushes || solution.unintuitivePushes < minUnintuitive) {
+      bumpSize();
+      continue;
+    }
+
+    const populated = populateLevelFeatures(base, {
       level,
-      seed: attemptSeed,
-      width,
-      height,
+      usedSquares: solution.usedSquares,
     });
-    const quickPushes = estimateMinPushes({
-      ...generated,
-      maxPushes: targetPushes,
-    });
-    const hasMobility = monstersHaveMobility(generated, minMonsterTiles);
-    let confirmedPushes = quickPushes;
-    if (hasMobility && quickPushes > targetPushes) {
-      confirmedPushes = estimateMinPushes({
-        ...generated,
-        requireSolution: true,
-      });
+    if (!monstersHaveMobility(populated, minMonsterTiles)) {
+      bumpSize();
+      continue;
     }
-    if (Number.isFinite(confirmedPushes) && hasMobility && confirmedPushes > bestPushes) {
-      bestPushes = confirmedPushes;
-      bestCandidate = generated;
-    }
-    if (Number.isFinite(confirmedPushes) && confirmedPushes >= targetPushes && hasMobility) {
-      return generated;
-    }
+
+    return {
+      ...populated,
+      solver: {
+        moves: solution.moves,
+        start: solution.start,
+        pushes: solution.pushes,
+        unintuitivePushes: solution.unintuitivePushes,
+      },
+      generationAttempts: attempts,
+    };
   }
-  if (bestCandidate) {
-    return bestCandidate;
-  }
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    const attemptSeed = seed + attempt * 409;
-    const generated = generateLevelOnce({
-      level,
-      seed: attemptSeed,
-      width,
-      height,
-    });
-    if (monstersHaveMobility(generated, minMonsterTiles)) {
-      return generated;
-    }
-  }
-  return generateLevelOnce({ level, seed, width, height });
 }
 
 function createTokens({ tokens, tokenCount, startArea }) {
@@ -1005,14 +932,174 @@ function createGame({
     name: GAME_NAME,
     level,
     seed,
-    width,
-    height,
+    width: generated.width,
+    height: generated.height,
     tiles: generated.tiles,
     startArea: generated.startArea,
     exit: generated.exit,
     tokens: nextTokens,
     monsters: generated.monsters,
     monsterConfig: nextMonsterConfig,
+    solver: generated.solver || null,
+    generationAttempts: generated.generationAttempts || 1,
+    combat: null,
+    pendingTrap: null,
+  };
+}
+
+function normalizeSolverSnapshot(solver) {
+  if (!solver || !Array.isArray(solver.moves)) {
+    return null;
+  }
+  const validDirections = new Set(DIRECTIONS.map((dir) => dir.name));
+  const moves = solver.moves
+    .map((move) => {
+      if (typeof move === "string") {
+        return { dir: move, push: false };
+      }
+      if (!move || typeof move.dir !== "string") {
+        return null;
+      }
+      return { dir: move.dir, push: Boolean(move.push) };
+    })
+    .filter((move) => move && validDirections.has(move.dir));
+
+  if (moves.length === 0) {
+    return null;
+  }
+
+  const start = solver.start || {};
+  const startX = Number.parseInt(start.x, 10);
+  const startY = Number.parseInt(start.y, 10);
+
+  return {
+    moves,
+    start: Number.isFinite(startX) && Number.isFinite(startY) ? { x: startX, y: startY } : null,
+    pushes: Number.isFinite(solver.pushes) ? solver.pushes : moves.filter((move) => move.push).length,
+    unintuitivePushes: Number.isFinite(solver.unintuitivePushes) ? solver.unintuitivePushes : 0,
+  };
+}
+
+function loadSnapshot(state, snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.tiles)) {
+    return null;
+  }
+  const width = Number.parseInt(snapshot.width, 10);
+  const height = Number.parseInt(snapshot.height, 10);
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width < 4 || height < 4) {
+    return null;
+  }
+
+  const startArea =
+    snapshot.startArea &&
+    Number.isFinite(snapshot.startArea.x) &&
+    Number.isFinite(snapshot.startArea.y) &&
+    Number.isFinite(snapshot.startArea.size)
+      ? {
+          x: snapshot.startArea.x,
+          y: snapshot.startArea.y,
+          size: snapshot.startArea.size,
+        }
+      : { x: 1, y: 1, size: START_SIZE };
+
+  const exit =
+    snapshot.exit &&
+    Number.isFinite(snapshot.exit.x) &&
+    Number.isFinite(snapshot.exit.y)
+      ? { x: snapshot.exit.x, y: snapshot.exit.y }
+      : { x: width - 2, y: height - 2 };
+
+  const validDirections = new Set(DIRECTIONS.map((dir) => dir.name));
+  const tiles = buildGrid(width, height, createRockTile);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const source = snapshot.tiles[y] && snapshot.tiles[y][x];
+      if (!source || typeof source.type !== "string") {
+        continue;
+      }
+      const uncovered = Boolean(source.uncovered);
+      if (source.type === "block") {
+        tiles[y][x] = {
+          type: "block",
+          uncovered,
+          directions: Array.isArray(source.directions)
+            ? source.directions.filter((dir) => validDirections.has(dir))
+            : [],
+        };
+      } else if (source.type === "trap") {
+        tiles[y][x] = {
+          type: "trap",
+          uncovered,
+          message: typeof source.message === "string" ? source.message : TRAP_MESSAGES[0],
+        };
+      } else if (source.type === "treasure") {
+        tiles[y][x] = {
+          type: "treasure",
+          uncovered,
+          value: Number.isFinite(source.value) ? source.value : 0,
+        };
+      } else if (source.type === "exit") {
+        tiles[y][x] = { type: "exit", uncovered };
+      } else if (source.type === "empty") {
+        tiles[y][x] = { type: "empty", uncovered };
+      } else if (source.type === "rock") {
+        tiles[y][x] = { type: "rock", uncovered };
+      }
+    }
+  }
+
+  const monsters = Array.isArray(snapshot.monsters)
+    ? snapshot.monsters
+        .map((monster, index) => {
+          const mx = Number.parseInt(monster && monster.x, 10);
+          const my = Number.parseInt(monster && monster.y, 10);
+          if (!Number.isFinite(mx) || !Number.isFinite(my)) {
+            return null;
+          }
+          if (!inBounds(mx, my, width, height)) {
+            return null;
+          }
+          const type = MONSTER_TYPES.includes(monster.type) ? monster.type : MONSTER_TYPES[0];
+          return {
+            id: typeof monster.id === "string" ? monster.id : `m${index + 1}`,
+            type,
+            x: mx,
+            y: my,
+            lastMoveAt: 0,
+          };
+        })
+        .filter(Boolean)
+    : [];
+
+  const nextTokens = createTokens({
+    tokens: state.tokens,
+    tokenCount: state.tokens.length,
+    startArea,
+  });
+
+  const solver = normalizeSolverSnapshot(snapshot.solver);
+
+  return {
+    gameId: GAME_ID,
+    name: GAME_NAME,
+    level: Number.isFinite(Number.parseInt(snapshot.level, 10))
+      ? Number.parseInt(snapshot.level, 10)
+      : state.level,
+    seed: Number.isFinite(Number.parseInt(snapshot.seed, 10))
+      ? Number.parseInt(snapshot.seed, 10)
+      : state.seed,
+    width,
+    height,
+    tiles,
+    startArea,
+    exit,
+    tokens: nextTokens,
+    monsters,
+    monsterConfig: state.monsterConfig,
+    solver,
+    generationAttempts: Number.isFinite(snapshot.generationAttempts)
+      ? snapshot.generationAttempts
+      : 1,
     combat: null,
     pendingTrap: null,
   };
@@ -1232,6 +1319,9 @@ function serializeTile(tile, count, role, visible, uncovered) {
   if (tile.type === "treasure") {
     payload.value = role === "dm" ? tile.value : null;
   }
+  if (tile.type === "trap" && role === "dm") {
+    payload.message = tile.message || "";
+  }
   if (tile.type === "empty" && (uncovered || role === "dm")) {
     payload.number = count;
   }
@@ -1295,7 +1385,7 @@ function serializeState(state, { role, socketId }) {
     })
   );
 
-  return {
+  const payload = {
     gameId: state.gameId,
     gameName: state.name,
     level: state.level,
@@ -1325,6 +1415,18 @@ function serializeState(state, { role, socketId }) {
         : { active: true }
       : null,
   };
+  if (role === "dm") {
+    payload.generationAttempts = state.generationAttempts || 1;
+    payload.solver = state.solver
+      ? {
+          moves: state.solver.moves,
+          start: state.solver.start,
+          pushes: state.solver.pushes,
+          unintuitivePushes: state.solver.unintuitivePushes,
+        }
+      : null;
+  }
+  return payload;
 }
 
 function findTokenAt(state, x, y) {
@@ -2367,6 +2469,7 @@ module.exports = {
   exitCombat,
   advanceLevel,
   resetLevel,
+  loadSnapshot,
   releaseTokenOwnership,
   updateMonsters,
 };
