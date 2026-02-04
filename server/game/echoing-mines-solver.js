@@ -134,15 +134,31 @@ function analyzeSolution({ moves, start, tiles, width, height, exit }) {
   const blocks = buildBlockList(tiles);
   const positions = blocks.map((block) => block.y * width + block.x);
   const usedSquares = new Set();
-  const addUsed = (x, y) => {
+  const movedBlocks = new Set();
+  const revisitedSquares = new Set();
+  let revisitEvents = 0;
+  const visitCounts = new Map();
+  const addUsedSquare = (x, y) => {
     usedSquares.add(coordKey(x, y));
+  };
+  const recordPlayerVisit = (x, y) => {
+    const key = coordKey(x, y);
+    usedSquares.add(key);
+    const visits = (visitCounts.get(key) || 0) + 1;
+    visitCounts.set(key, visits);
+    if (visits === 2) {
+      revisitedSquares.add(key);
+      revisitEvents += 1;
+    } else if (visits > 2) {
+      revisitEvents += 1;
+    }
   };
 
   positions.forEach((pos) => {
-    addUsed(pos % width, Math.floor(pos / width));
+    addUsedSquare(pos % width, Math.floor(pos / width));
   });
   let player = { x: start.x, y: start.y };
-  addUsed(player.x, player.y);
+  recordPlayerVisit(player.x, player.y);
 
   let pushes = 0;
   let unintuitivePushes = 0;
@@ -184,18 +200,26 @@ function analyzeSolution({ moves, start, tiles, width, height, exit }) {
       }
 
       chain.forEach((index) => {
+        movedBlocks.add(index);
         positions[index] += dir.dx + dir.dy * width;
       });
     }
 
     player = { x: target.x, y: target.y };
-    addUsed(player.x, player.y);
+    recordPlayerVisit(player.x, player.y);
     positions.forEach((pos) => {
-      addUsed(pos % width, Math.floor(pos / width));
+      addUsedSquare(pos % width, Math.floor(pos / width));
     });
   });
 
-  return { pushes, unintuitivePushes, usedSquares };
+  return {
+    pushes,
+    unintuitivePushes,
+    usedSquares,
+    distinctBlocksPushed: movedBlocks.size,
+    revisitedSquares: revisitedSquares.size,
+    revisitEvents,
+  };
 }
 
 function solveBlockPuzzle({
@@ -414,6 +438,9 @@ function solveBlockPuzzle({
     pushes: analysis.pushes,
     unintuitivePushes: analysis.unintuitivePushes,
     usedSquares: analysis.usedSquares,
+    distinctBlocksPushed: analysis.distinctBlocksPushed,
+    revisitedSquares: analysis.revisitedSquares,
+    revisitEvents: analysis.revisitEvents,
   };
 }
 

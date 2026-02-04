@@ -295,6 +295,76 @@ function buildRooms({
   return rooms;
 }
 
+function countOpenTiles(tiles) {
+  let total = 0;
+  tiles.forEach((row) => {
+    row.forEach((tile) => {
+      if (tile.type !== "rock") {
+        total += 1;
+      }
+    });
+  });
+  return total;
+}
+
+function carveOpenArea({ tiles, width, height, rng, startArea, targetRatio }) {
+  const openCells = [];
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      if (tiles[y][x].type !== "rock") {
+        openCells.push({ x, y });
+      }
+    }
+  }
+  let openCount = countOpenTiles(tiles);
+  const target = Math.min(width * height - 1, Math.floor(width * height * targetRatio));
+  let attempts = width * height * 6;
+
+  while (openCount < target && attempts > 0) {
+    attempts -= 1;
+    if (openCells.length === 0) {
+      break;
+    }
+    const anchor = openCells[randInt(rng, 0, openCells.length - 1)];
+    const dir = DIRECTIONS[randInt(rng, 0, DIRECTIONS.length - 1)];
+    const nx = anchor.x + dir.dx;
+    const ny = anchor.y + dir.dy;
+    if (!inBounds(nx, ny, width, height)) {
+      continue;
+    }
+    if (nx === 0 || ny === 0 || nx === width - 1 || ny === height - 1) {
+      continue;
+    }
+    if (isStartArea(nx, ny, startArea)) {
+      continue;
+    }
+    if (tiles[ny][nx].type !== "rock") {
+      continue;
+    }
+    tiles[ny][nx] = createEmptyTile();
+    openCells.push({ x: nx, y: ny });
+    openCount += 1;
+
+    if (openCount < target && rng() < 0.25) {
+      const nnx = nx + dir.dx;
+      const nny = ny + dir.dy;
+      if (
+        inBounds(nnx, nny, width, height) &&
+        nnx > 0 &&
+        nny > 0 &&
+        nnx < width - 1 &&
+        nny < height - 1 &&
+        !isStartArea(nnx, nny, startArea) &&
+        tiles[nny][nnx].type === "rock"
+      ) {
+        tiles[nny][nnx] = createEmptyTile();
+        openCells.push({ x: nnx, y: nny });
+        openCount += 1;
+      }
+    }
+  }
+}
+
 function computeTrapAdjacency(tiles, width, height) {
   const counts = buildGrid(width, height, () => 0);
   for (let y = 0; y < height; y += 1) {
@@ -372,11 +442,14 @@ function generateBaseLayout({ level, seed, width, height }) {
     width,
     height,
     rng,
-    count: Math.min(3 + Math.floor(level / 2), 6),
+    count: Math.min(5 + Math.floor(level * 0.8), 10),
     startArea,
     exit,
     mainPath,
   });
+
+  const targetOpenRatio = Math.min(0.62 + level * 0.02, 0.78);
+  carveOpenArea({ tiles, width, height, rng, startArea, targetRatio: targetOpenRatio });
 
   tiles[exit.y][exit.x] = { type: "exit", uncovered: false };
 
@@ -392,13 +465,35 @@ function generateBaseLayout({ level, seed, width, height }) {
   const areaScale = Math.sqrt(
     (width * height) / (DEFAULT_WIDTH * DEFAULT_HEIGHT)
   );
-  const blockCount = Math.min(
-    Math.floor(mainPath.length / 2),
-    Math.max(3, Math.floor((4 + level * 2) * areaScale))
+  const extraBlockTargets = [];
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      if (tiles[y][x].type !== "empty") {
+        continue;
+      }
+      if (pathSet.has(coordKey(x, y))) {
+        continue;
+      }
+      if (isStartArea(x, y, startArea)) {
+        continue;
+      }
+      if (rng() < 0.08) {
+        extraBlockTargets.push({ x, y });
+      }
+    }
+  }
+  shuffle(extraBlockTargets, rng);
+  const allTargets = blockTargets.concat(extraBlockTargets);
+  const baseBlockTarget = Math.max(
+    12 * level,
+    Math.floor(width * height * 0.15),
+    Math.floor((10 + level * 6) * areaScale)
   );
+  const blockCount = Math.min(allTargets.length, baseBlockTarget);
 
   const blocks = [];
-  for (const pos of blockTargets) {
+
+  for (const pos of allTargets) {
     if (blocks.length >= blockCount) {
       break;
     }
@@ -747,6 +842,8 @@ function monstersHaveMobility(state, minTiles) {
 function generateLevel({ level, seed, width, height }) {
   const minPushes = 5 * level;
   const minUnintuitive = 2 * level;
+  const minDistinctBlocks = 10 * level;
+  const minRevisitedSquares = 10 * level;
   const attemptsPerSize = 30;
   const maxSizeBoost = 6;
   const sizeStep = 2;
@@ -789,6 +886,9 @@ function generateLevel({ level, seed, width, height }) {
         start: candidate.solution.start,
         pushes: candidate.solution.pushes,
         unintuitivePushes: candidate.solution.unintuitivePushes,
+        distinctBlocksPushed: candidate.solution.distinctBlocksPushed,
+        revisitedSquares: candidate.solution.revisitedSquares,
+        revisitEvents: candidate.solution.revisitEvents,
       },
       generationAttempts: attempts,
     };
@@ -845,13 +945,22 @@ function generateLevel({ level, seed, width, height }) {
       continue;
     }
 
-    const score = solution.pushes * 5 + solution.unintuitivePushes * 12;
+    const score =
+      solution.pushes * 5 +
+      solution.unintuitivePushes * 12 +
+      solution.distinctBlocksPushed * 8 +
+      solution.revisitedSquares * 6;
     if (score > bestScore) {
       bestScore = score;
       bestCandidate = { base, solution };
     }
 
-    if (solution.pushes < minPushes || solution.unintuitivePushes < minUnintuitive) {
+    if (
+      solution.pushes < minPushes ||
+      solution.unintuitivePushes < minUnintuitive ||
+      solution.distinctBlocksPushed < minDistinctBlocks ||
+      solution.revisitedSquares < minRevisitedSquares
+    ) {
       bumpSize();
       continue;
     }
@@ -872,6 +981,9 @@ function generateLevel({ level, seed, width, height }) {
         start: solution.start,
         pushes: solution.pushes,
         unintuitivePushes: solution.unintuitivePushes,
+        distinctBlocksPushed: solution.distinctBlocksPushed,
+        revisitedSquares: solution.revisitedSquares,
+        revisitEvents: solution.revisitEvents,
       },
       generationAttempts: attempts,
     };
@@ -977,6 +1089,13 @@ function normalizeSolverSnapshot(solver) {
     start: Number.isFinite(startX) && Number.isFinite(startY) ? { x: startX, y: startY } : null,
     pushes: Number.isFinite(solver.pushes) ? solver.pushes : moves.filter((move) => move.push).length,
     unintuitivePushes: Number.isFinite(solver.unintuitivePushes) ? solver.unintuitivePushes : 0,
+    distinctBlocksPushed: Number.isFinite(solver.distinctBlocksPushed)
+      ? solver.distinctBlocksPushed
+      : 0,
+    revisitedSquares: Number.isFinite(solver.revisitedSquares)
+      ? solver.revisitedSquares
+      : 0,
+    revisitEvents: Number.isFinite(solver.revisitEvents) ? solver.revisitEvents : 0,
   };
 }
 
@@ -1423,6 +1542,9 @@ function serializeState(state, { role, socketId }) {
           start: state.solver.start,
           pushes: state.solver.pushes,
           unintuitivePushes: state.solver.unintuitivePushes,
+          distinctBlocksPushed: state.solver.distinctBlocksPushed,
+          revisitedSquares: state.solver.revisitedSquares,
+          revisitEvents: state.solver.revisitEvents,
         }
       : null;
   }
