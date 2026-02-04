@@ -839,7 +839,7 @@ function monstersHaveMobility(state, minTiles) {
   );
 }
 
-function generateLevel({ level, seed, width, height }) {
+function generateLevel({ level, seed, width, height, onProgress }) {
   const minPushes = 5 * level;
   const minUnintuitive = 2 * level;
   const minDistinctBlocks = 10 * level;
@@ -856,6 +856,7 @@ function generateLevel({ level, seed, width, height }) {
   let sizeBoost = 0;
   let bestCandidate = null;
   let bestScore = -Infinity;
+  const notifyProgress = typeof onProgress === "function" ? onProgress : null;
 
   const bumpSize = () => {
     if (attempts % attemptsPerSize === 0) {
@@ -925,6 +926,15 @@ function generateLevel({ level, seed, width, height }) {
       height: attemptHeight,
     });
     attempts += 1;
+    if (notifyProgress) {
+      notifyProgress({
+        attempt: attempts,
+        width: attemptWidth,
+        height: attemptHeight,
+        seed: attemptSeed,
+        sizeBoost,
+      });
+    }
 
     const quick = solveBlockPuzzle({
       ...base,
@@ -1028,10 +1038,11 @@ function createGame({
   tokens = null,
   tokenCount = 4,
   monsterConfig = null,
+  onProgress = null,
 } = {}) {
   const width = DEFAULT_WIDTH;
   const height = DEFAULT_HEIGHT;
-  const generated = generateLevel({ level, seed, width, height });
+  const generated = generateLevel({ level, seed, width, height, onProgress });
   const nextTokens = createTokens({
     tokens,
     tokenCount,

@@ -22,6 +22,7 @@ const outputDir = getArg(
   path.join(process.cwd(), "generated", "echoing-mines")
 );
 const cellSize = Number.parseInt(getArg("--cell", "16"), 10) || 16;
+const logEvery = Math.max(1, Number.parseInt(getArg("--log-every", "10"), 10) || 10);
 
 function crc32(buf) {
   let crc = 0xffffffff;
@@ -149,17 +150,78 @@ function buildStats(state, seed) {
   };
 }
 
+function normalizeSnapshotTile(tile) {
+  if (!tile || !tile.type) {
+    return { type: "rock", uncovered: false };
+  }
+  const uncovered = Boolean(tile.uncovered);
+  if (tile.type === "block") {
+    return {
+      type: "block",
+      uncovered,
+      directions: Array.isArray(tile.directions) ? tile.directions.slice() : [],
+    };
+  }
+  if (tile.type === "treasure") {
+    return {
+      type: "treasure",
+      uncovered,
+      value: Number.isFinite(tile.value) ? tile.value : 0,
+    };
+  }
+  if (tile.type === "trap") {
+    return {
+      type: "trap",
+      uncovered,
+      message: typeof tile.message === "string" ? tile.message : "",
+    };
+  }
+  if (tile.type === "exit") {
+    return { type: "exit", uncovered };
+  }
+  if (tile.type === "empty") {
+    return { type: "empty", uncovered };
+  }
+  return { type: "rock", uncovered };
+}
+
+function buildSnapshot(state) {
+  return {
+    level: state.level,
+    seed: state.seed,
+    width: state.width,
+    height: state.height,
+    startArea: state.startArea,
+    exit: state.exit,
+    generationAttempts: state.generationAttempts || 1,
+    solver: state.solver || null,
+    tiles: state.tiles.map((row) => row.map((tile) => normalizeSnapshotTile(tile))),
+    monsters: Array.isArray(state.monsters)
+      ? state.monsters.map((monster) => ({
+          id: monster.id,
+          type: monster.type,
+          x: monster.x,
+          y: monster.y,
+        }))
+      : [],
+  };
+}
+
 function writeLevelFiles(state, seed, outDir, cellSizeValue) {
   const safeSeed = String(seed);
   const baseName = `level-${state.level}-seed-${safeSeed}`;
   const pngPath = path.join(outDir, `${baseName}.png`);
   const jsonPath = path.join(outDir, `${baseName}.json`);
+  const snapshotPath = path.join(outDir, `${baseName}.snapshot.json`);
 
   const png = renderLevelPng(state, cellSizeValue);
   fs.writeFileSync(pngPath, png);
 
   const stats = buildStats(state, seed);
   fs.writeFileSync(jsonPath, JSON.stringify(stats, null, 2));
+  const snapshot = buildSnapshot(state);
+  fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
+  stats.snapshotPath = snapshotPath;
   return stats;
 }
 
@@ -168,13 +230,33 @@ function main() {
   const seeds = generateSeeds(toSeed(baseSeedRaw), count);
   const summary = [];
 
-  seeds.forEach((seed) => {
-    const game = mines.createGame({ level, seed });
+  seeds.forEach((seed, index) => {
+    const seedLabel = `[${index + 1}/${seeds.length}]`;
+    console.log(`${seedLabel} Generating level ${level} with seed ${seed}...`);
+    let lastLogged = 0;
+    const game = mines.createGame({
+      level,
+      seed,
+      onProgress: (info) => {
+        if (!info || !Number.isFinite(info.attempt)) {
+          return;
+        }
+        if (info.attempt === 1 || info.attempt - lastLogged >= logEvery) {
+          lastLogged = info.attempt;
+          console.log(
+            `${seedLabel} Attempt ${info.attempt} (size ${info.width}x${info.height}, seed ${info.seed})`
+          );
+        }
+      },
+    });
     if (!game.solver) {
       console.error(`No solver path for seed ${seed}. Skipping.`);
       return;
     }
     const stats = writeLevelFiles(game, seed, outputDir, cellSize);
+    console.log(
+      `${seedLabel} Done after ${stats.generationAttempts} attempts (final size ${stats.width}x${stats.height}).`
+    );
     summary.push(stats);
   });
 
