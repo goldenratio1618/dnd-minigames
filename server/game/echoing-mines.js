@@ -3,7 +3,6 @@ const GAME_NAME = "Echoing Mines";
 const DEFAULT_WIDTH = 18;
 const DEFAULT_HEIGHT = 12;
 const START_SIZE = 3;
-const PLAYER_SPEED_TPS = 3;
 const MONSTER_SPEED_TPS = 1.5;
 const VIOLET_MIN_SPEED = 0.5;
 const VIOLET_MAX_SPEED = 6;
@@ -12,6 +11,26 @@ const VIOLET_FAR_DISTANCE = 12;
 const { solveBlockPuzzle } = require("./echoing-mines-solver");
 
 const MONSTER_TYPES = ["green", "yellow", "red", "violet"];
+
+const DEFAULT_GATE_CONFIG = {
+  oneWay: 2,
+  twoWay: 1,
+  toggle: 1,
+  switchback: 1,
+  shared: 0,
+  buffer: 0,
+  chain: 1,
+  interlock: 1,
+  doorWall: 0,
+};
+
+const SOLUTION_FIRST_LEFT_MARGIN = 5;
+const SOLUTION_FIRST_TOP_MARGIN = 6;
+const SOLUTION_FIRST_GADGET_WIDTH = 9;
+const SOLUTION_FIRST_GADGET_GAP = 2;
+const SOLUTION_FIRST_ROW_GAP = 6;
+const SOLUTION_FIRST_MODULES_PER_ROW = 3;
+const SOLUTION_FIRST_MAX_ATTEMPTS = 28;
 
 const DIRECTIONS = [
   { name: "up", dx: 0, dy: -1 },
@@ -80,6 +99,20 @@ function shuffle(array, rng) {
     [array[i], array[j]] = [array[j], array[i]];
   }
   return array;
+}
+
+function normalizeGateConfig(config) {
+  const normalized = { ...DEFAULT_GATE_CONFIG };
+  if (!config) {
+    return normalized;
+  }
+  Object.keys(normalized).forEach((key) => {
+    const value = Number.parseInt(config[key], 10);
+    if (Number.isFinite(value) && value >= 0) {
+      normalized[key] = value;
+    }
+  });
+  return normalized;
 }
 
 function inBounds(x, y, width, height) {
@@ -389,6 +422,27 @@ function computeTrapAdjacency(tiles, width, height) {
   return counts;
 }
 
+function computeTrapDangerMask(tiles, width, height) {
+  const mask = buildGrid(width, height, () => false);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (tiles[y][x].type !== "trap") {
+        continue;
+      }
+      for (let oy = -1; oy <= 1; oy += 1) {
+        for (let ox = -1; ox <= 1; ox += 1) {
+          const nx = x + ox;
+          const ny = y + oy;
+          if (inBounds(nx, ny, width, height)) {
+            mask[ny][nx] = true;
+          }
+        }
+      }
+    }
+  }
+  return mask;
+}
+
 function getTokenStartPositions(startArea, count) {
   const positions = [];
   for (let y = startArea.y; y < startArea.y + startArea.size; y += 1) {
@@ -576,7 +630,6 @@ function populateLevelFeatures(base, { level, usedSquares }) {
     startCenter,
     exit,
     rooms,
-    pathSet,
     rng,
   } = base;
   const reserved = usedSquares || new Set();
@@ -586,9 +639,6 @@ function populateLevelFeatures(base, { level, usedSquares }) {
     for (let x = 1; x < width - 1; x += 1) {
       const key = coordKey(x, y);
       if (isStartArea(x, y, startArea)) {
-        continue;
-      }
-      if (pathSet.has(key)) {
         continue;
       }
       if (reserved.has(key)) {
@@ -724,13 +774,23 @@ function populateLevelFeatures(base, { level, usedSquares }) {
       if (isStartArea(x, y, startArea)) {
         continue;
       }
-      if (pathSet.has(coordKey(x, y))) {
-        continue;
-      }
       if (coordKey(x, y) === coordKey(exit.x, exit.y)) {
         continue;
       }
       if (reachable.has(coordKey(x, y))) {
+        continue;
+      }
+      if (
+        !DIRECTIONS.some((dir) => {
+          const nx = x + dir.dx;
+          const ny = y + dir.dy;
+          return (
+            inBounds(nx, ny, width, height) &&
+            canMonsterMoveInto(tiles[ny][nx]) &&
+            !reachable.has(coordKey(nx, ny))
+          );
+        })
+      ) {
         continue;
       }
       monsterCandidates.push({ x, y });
@@ -802,6 +862,556 @@ function populateLevelFeatures(base, { level, usedSquares }) {
   };
 }
 
+function carveCell(tiles, x, y, pathSet) {
+  tiles[y][x] = createEmptyTile();
+  if (pathSet) {
+    pathSet.add(coordKey(x, y));
+  }
+}
+
+function placeBlock(tiles, x, y, directions, pathSet) {
+  tiles[y][x] = {
+    type: "block",
+    uncovered: false,
+    directions: Array.isArray(directions) ? directions.slice() : [],
+  };
+  if (pathSet) {
+    pathSet.add(coordKey(x, y));
+  }
+}
+
+function carveLine(tiles, x1, y1, x2, y2, pathSet) {
+  if (x1 === x2) {
+    const step = y1 <= y2 ? 1 : -1;
+    for (let y = y1; y !== y2 + step; y += step) {
+      carveCell(tiles, x1, y, pathSet);
+    }
+    return;
+  }
+  if (y1 === y2) {
+    const step = x1 <= x2 ? 1 : -1;
+    for (let x = x1; x !== x2 + step; x += step) {
+      carveCell(tiles, x, y1, pathSet);
+    }
+    return;
+  }
+  throw new Error("Only orthogonal lines are supported.");
+}
+
+function buildGadgetQueue(config, rng) {
+  const queue = [];
+  const normalized = normalizeGateConfig(config);
+  Object.entries(normalized).forEach(([type, count]) => {
+    if (!Number.isFinite(count) || count <= 0) {
+      return;
+    }
+    for (let i = 0; i < count; i += 1) {
+      queue.push({ type });
+    }
+  });
+  return queue;
+}
+
+function createModuleContext({
+  tiles,
+  anchorX,
+  laneY,
+  orientation,
+  pathSet,
+  instance,
+}) {
+  const toX = (localX) =>
+    orientation === 1
+      ? anchorX + localX
+      : anchorX + (SOLUTION_FIRST_GADGET_WIDTH - 1 - localX);
+  const toY = (localY) => laneY + localY;
+  const forward = orientation === 1 ? "right" : "left";
+  const backward = orientation === 1 ? "left" : "right";
+
+  return {
+    forward,
+    backward,
+    carveCell(localX, localY = 0) {
+      carveCell(tiles, toX(localX), toY(localY), pathSet);
+    },
+    carveLine(localX1, localY1, localX2, localY2) {
+      carveLine(tiles, toX(localX1), toY(localY1), toX(localX2), toY(localY2), pathSet);
+    },
+    placeBlock(label, localX, localY, directions) {
+      const worldX = toX(localX);
+      const worldY = toY(localY);
+      placeBlock(
+        tiles,
+        worldX,
+        worldY,
+        directions.slice(),
+        pathSet
+      );
+      instance.blocks.push({ label, x: worldX, y: worldY });
+    },
+    mark(name, localX, localY) {
+      instance.markers[name] = { x: toX(localX), y: toY(localY) };
+    },
+  };
+}
+
+function carveSwitchbackFrame(ctx) {
+  ctx.carveLine(0, 0, 5, 0);
+  ctx.carveLine(3, 0, 3, 1);
+  ctx.carveLine(3, 1, 5, 1);
+  ctx.carveLine(5, 1, 5, 0);
+  ctx.carveLine(4, 0, 4, -1);
+  ctx.carveLine(4, -1, 8, -1);
+  ctx.carveLine(8, -1, 8, 0);
+  ctx.mark("loopTurn", 5, 1);
+  ctx.mark("upperDoor", 4, -1);
+}
+
+function carveBypassFrame(ctx) {
+  ctx.carveLine(0, 0, 8, 0);
+  ctx.carveLine(5, 0, 5, 1);
+  ctx.carveLine(5, 1, 8, 1);
+  ctx.carveLine(8, 1, 8, 0);
+  ctx.mark("bypassTurn", 7, 1);
+}
+
+function applyOneWayGate(ctx, instance) {
+  carveBypassFrame(ctx);
+  ctx.placeBlock("primary", 5, 0, [ctx.forward]);
+  instance.checks.push({ kind: "blockMoved", label: "primary" });
+}
+
+function applyTwoWayGate(ctx, instance) {
+  carveBypassFrame(ctx);
+  ctx.placeBlock("primary", 5, 0, [ctx.forward, ctx.backward]);
+  instance.checks.push({ kind: "blockMoved", label: "primary" });
+}
+
+function applyToggleGate(ctx, instance) {
+  carveBypassFrame(ctx);
+  ctx.placeBlock("primary", 5, 0, [ctx.forward, ctx.backward]);
+  ctx.placeBlock("toggle", 7, 1, [ctx.forward]);
+  instance.checks.push({ kind: "blockMoved", label: "primary" });
+  instance.checks.push({ kind: "blockMoved", label: "toggle" });
+}
+
+function applySwitchbackGate(ctx, instance) {
+  carveBypassFrame(ctx);
+  ctx.placeBlock("primary", 5, 0, [ctx.forward, ctx.backward]);
+  ctx.placeBlock("switch", 6, 1, [ctx.forward]);
+  instance.checks.push({ kind: "blockMoved", label: "primary" });
+  instance.checks.push({ kind: "blockMoved", label: "switch" });
+  instance.checks.push({ kind: "markerVisited", marker: "bypassTurn" });
+}
+
+function applySharedGate(ctx, instance) {
+  carveBypassFrame(ctx);
+  ctx.placeBlock("primary", 5, 0, [ctx.forward, ctx.backward]);
+  ctx.placeBlock("shared", 6, 1, [ctx.forward]);
+  instance.checks.push({ kind: "blockMoved", label: "primary" });
+}
+
+function applyBufferGate(ctx, instance) {
+  carveBypassFrame(ctx);
+  ctx.placeBlock("primary", 5, 0, [ctx.forward]);
+  instance.checks.push({ kind: "blockMoved", label: "primary" });
+}
+
+function applyChainGate(ctx, instance) {
+  carveBypassFrame(ctx);
+  ctx.placeBlock("lead", 5, 0, [ctx.forward]);
+  ctx.placeBlock("tail", 6, 0, [ctx.forward]);
+  instance.checks.push({
+    kind: "chainPush",
+    minLength: 2,
+    labels: ["lead", "tail"],
+  });
+}
+
+function applyInterlockGate(ctx, instance) {
+  carveBypassFrame(ctx);
+  ctx.placeBlock("primary", 5, 0, [ctx.forward, ctx.backward]);
+  ctx.placeBlock("interlock", 6, 1, [ctx.forward, ctx.backward]);
+  instance.checks.push({ kind: "blockMoved", label: "primary" });
+}
+
+function applyDoorWallGate(ctx, instance) {
+  carveBypassFrame(ctx);
+  ctx.placeBlock("primary", 5, 0, [ctx.forward, ctx.backward]);
+  instance.checks.push({ kind: "blockMoved", label: "primary" });
+}
+
+const GADGET_BUILDERS = {
+  oneWay: applyOneWayGate,
+  twoWay: applyTwoWayGate,
+  toggle: applyToggleGate,
+  switchback: applySwitchbackGate,
+  shared: applySharedGate,
+  buffer: applyBufferGate,
+  chain: applyChainGate,
+  interlock: applyInterlockGate,
+  doorWall: applyDoorWallGate,
+};
+
+function buildSolutionFirstLayout({ level, seed, gateConfig }) {
+  const rng = createRng(seed + level * 997);
+  const queue = buildGadgetQueue(gateConfig, rng);
+  const gadgetCount = queue.length;
+  const rows = Math.max(1, Math.ceil(gadgetCount / SOLUTION_FIRST_MODULES_PER_ROW));
+  const width = Math.max(
+    DEFAULT_WIDTH,
+    SOLUTION_FIRST_LEFT_MARGIN * 2 +
+      SOLUTION_FIRST_MODULES_PER_ROW * SOLUTION_FIRST_GADGET_WIDTH +
+      (SOLUTION_FIRST_MODULES_PER_ROW - 1) * SOLUTION_FIRST_GADGET_GAP +
+      6
+  );
+  const height = Math.max(
+    DEFAULT_HEIGHT,
+    SOLUTION_FIRST_TOP_MARGIN + (rows - 1) * SOLUTION_FIRST_ROW_GAP + 10
+  );
+  const tiles = buildGrid(width, height, createRockTile);
+  const startArea = { x: 1, y: 1, size: START_SIZE };
+  const startCenter = { x: startArea.x + 1, y: startArea.y + 1 };
+  const pathSet = new Set();
+
+  carveRect(
+    tiles,
+    { x: startArea.x, y: startArea.y, width: START_SIZE, height: START_SIZE },
+    () => ({ type: "empty", uncovered: true })
+  );
+  for (let y = startArea.y; y < startArea.y + START_SIZE; y += 1) {
+    for (let x = startArea.x; x < startArea.x + START_SIZE; x += 1) {
+      pathSet.add(coordKey(x, y));
+    }
+  }
+
+  const rowStartX = SOLUTION_FIRST_LEFT_MARGIN;
+  const slotSpan = SOLUTION_FIRST_GADGET_WIDTH + SOLUTION_FIRST_GADGET_GAP;
+  const gadgetInstances = [];
+  let cursor = { x: startCenter.x, y: startCenter.y };
+
+  queue.forEach((gate, index) => {
+    const row = Math.floor(index / SOLUTION_FIRST_MODULES_PER_ROW);
+    const slot = index % SOLUTION_FIRST_MODULES_PER_ROW;
+    const orientation = row % 2 === 0 ? 1 : -1;
+    const laneY = SOLUTION_FIRST_TOP_MARGIN + row * SOLUTION_FIRST_ROW_GAP;
+    const anchorX =
+      orientation === 1
+        ? rowStartX + slot * slotSpan
+        : rowStartX + (SOLUTION_FIRST_MODULES_PER_ROW - 1 - slot) * slotSpan;
+    const entryX = orientation === 1 ? anchorX : anchorX + SOLUTION_FIRST_GADGET_WIDTH - 1;
+    const exitX = orientation === 1 ? anchorX + SOLUTION_FIRST_GADGET_WIDTH - 1 : anchorX;
+
+    if (cursor.y !== laneY) {
+      carveLine(tiles, cursor.x, cursor.y, cursor.x, laneY, pathSet);
+    }
+    if (cursor.x !== entryX) {
+      carveLine(tiles, cursor.x, laneY, entryX, laneY, pathSet);
+    }
+
+    const instance = { type: gate.type, blocks: [], checks: [], markers: {} };
+    const ctx = createModuleContext({
+      tiles,
+      anchorX,
+      laneY,
+      orientation,
+      pathSet,
+      instance,
+    });
+    const builder = GADGET_BUILDERS[gate.type] || applyOneWayGate;
+    builder(ctx, instance);
+    gadgetInstances.push(instance);
+    cursor = { x: exitX, y: laneY };
+  });
+
+  let exit = { x: width - 2, y: height - 2 };
+  if (gadgetCount === 0) {
+    carveLine(tiles, cursor.x, cursor.y, cursor.x, SOLUTION_FIRST_TOP_MARGIN, pathSet);
+    carveLine(
+      tiles,
+      cursor.x,
+      SOLUTION_FIRST_TOP_MARGIN,
+      exit.x,
+      SOLUTION_FIRST_TOP_MARGIN,
+      pathSet
+    );
+    carveLine(tiles, exit.x, SOLUTION_FIRST_TOP_MARGIN, exit.x, exit.y, pathSet);
+  } else {
+    const preferredExitY = Math.min(height - 2, cursor.y + 2);
+    const preferredExitX = Math.max(1, Math.min(width - 2, cursor.x));
+    exit = { x: preferredExitX, y: preferredExitY };
+    if (cursor.y !== exit.y) {
+      carveLine(tiles, exit.x, cursor.y, exit.x, exit.y, pathSet);
+    }
+  }
+
+  tiles[exit.y][exit.x] = { type: "exit", uncovered: false };
+  pathSet.add(coordKey(exit.x, exit.y));
+
+  return {
+    tiles,
+    width,
+    height,
+    startArea,
+    startCenter,
+    exit,
+    rooms: [],
+    pathSet,
+    rng,
+    gadgetInstances,
+  };
+}
+
+function buildBlockList(tiles) {
+  const blocks = [];
+  tiles.forEach((row, y) => {
+    row.forEach((tile, x) => {
+      if (tile.type === "block") {
+        blocks.push({ x, y, directions: tile.directions || [] });
+      }
+    });
+  });
+  return blocks;
+}
+
+function directionByName(name) {
+  return DIRECTIONS.find((dir) => dir.name === name) || null;
+}
+
+function checkGateRequirement(instance, check, context) {
+  const {
+    blockPushCounts,
+    blockDirs,
+    pushEvents,
+    visitedCells,
+    markerSteps,
+  } = context;
+  const getIndex = (label) => instance.blockIndexByLabel.get(label);
+
+  if (check.kind === "blockMoved") {
+    const index = getIndex(check.label);
+    return Number.isFinite(index) && (blockPushCounts.get(index) || 0) > 0;
+  }
+  if (check.kind === "blockMovedBothWays") {
+    const index = getIndex(check.label);
+    if (!Number.isFinite(index)) {
+      return false;
+    }
+    const dirs = blockDirs.get(index);
+    return Boolean(dirs && dirs.has(check.dirA) && dirs.has(check.dirB));
+  }
+  if (check.kind === "blockMovedMinTimes") {
+    const index = getIndex(check.label);
+    return (
+      Number.isFinite(index) &&
+      (blockPushCounts.get(index) || 0) >= (check.min || 1)
+    );
+  }
+  if (check.kind === "allLabelsMoved") {
+    return check.labels.every((label) => {
+      const index = getIndex(label);
+      return Number.isFinite(index) && (blockPushCounts.get(index) || 0) > 0;
+    });
+  }
+  if (check.kind === "chainPush") {
+    const requiredIndices = (check.labels || [])
+      .map((label) => getIndex(label))
+      .filter((index) => Number.isFinite(index));
+    return pushEvents.some((event) => {
+      if (event.chainLength < (check.minLength || 2)) {
+        return false;
+      }
+      return requiredIndices.every((index) => event.chainIndices.includes(index));
+    });
+  }
+  if (check.kind === "markerVisited") {
+    const marker = instance.markers[check.marker];
+    return Boolean(marker && visitedCells.has(coordKey(marker.x, marker.y)));
+  }
+  if (check.kind === "blockMovedDirAfterMarker") {
+    const index = getIndex(check.label);
+    if (!Number.isFinite(index)) {
+      return false;
+    }
+    const marker = instance.markers[check.marker];
+    if (!marker) {
+      return false;
+    }
+    const markerStep = markerSteps.get(coordKey(marker.x, marker.y));
+    if (!Number.isFinite(markerStep)) {
+      return false;
+    }
+    return pushEvents.some(
+      (event) =>
+        event.step > markerStep &&
+        event.dir === check.dir &&
+        event.chainIndices.includes(index)
+    );
+  }
+  return false;
+}
+
+function analyzeGateInteractions({ tiles, width, startArea, solution, gadgetInstances }) {
+  if (!solution || !Array.isArray(solution.moves)) {
+    return { counts: {} };
+  }
+  const blocks = buildBlockList(tiles);
+  const positions = blocks.map((block) => block.y * width + block.x);
+  const blockIndexByKey = new Map();
+  blocks.forEach((block, index) => {
+    blockIndexByKey.set(coordKey(block.x, block.y), index);
+  });
+
+  gadgetInstances.forEach((instance) => {
+    instance.blockIndexByLabel = new Map();
+    instance.blocks.forEach((pos) => {
+      const index = blockIndexByKey.get(coordKey(pos.x, pos.y));
+      if (Number.isFinite(index)) {
+        instance.blockIndexByLabel.set(pos.label, index);
+      }
+    });
+  });
+
+  const blockPushCounts = new Map();
+  const blockDirs = new Map();
+  const pushEvents = [];
+  const fallbackStart = {
+    x: startArea.x + 1,
+    y: startArea.y + 1,
+  };
+  let player = solution.start || fallbackStart;
+  const visitedCells = new Set([coordKey(player.x, player.y)]);
+  const markerSteps = new Map([[coordKey(player.x, player.y), 0]]);
+
+  solution.moves.forEach((move, moveIndex) => {
+    const dir = directionByName(move.dir);
+    if (!dir) {
+      return;
+    }
+    const target = { x: player.x + dir.dx, y: player.y + dir.dy };
+    const blockMap = new Map();
+    positions.forEach((pos, index) => {
+      blockMap.set(pos, index);
+    });
+    const targetIndex = blockMap.get(target.y * width + target.x);
+    if (targetIndex !== undefined) {
+      const chain = [];
+      let cx = target.x;
+      let cy = target.y;
+      while (true) {
+        const chainIndex = blockMap.get(cy * width + cx);
+        if (chainIndex === undefined) {
+          break;
+        }
+        chain.push(chainIndex);
+        cx += dir.dx;
+        cy += dir.dy;
+      }
+      pushEvents.push({
+        step: moveIndex + 1,
+        dir: dir.name,
+        chainIndices: chain.slice(),
+        chainLength: chain.length,
+      });
+      chain.forEach((index) => {
+        positions[index] += dir.dx + dir.dy * width;
+        blockPushCounts.set(index, (blockPushCounts.get(index) || 0) + 1);
+        const entry = blockDirs.get(index) || new Set();
+        entry.add(dir.name);
+        blockDirs.set(index, entry);
+      });
+    }
+    player = target;
+    const key = coordKey(player.x, player.y);
+    visitedCells.add(key);
+    if (!markerSteps.has(key)) {
+      markerSteps.set(key, moveIndex + 1);
+    }
+  });
+
+  const counts = {};
+  gadgetInstances.forEach((instance) => {
+    const checks = Array.isArray(instance.checks) ? instance.checks : [];
+    const passed = checks.every((check) =>
+      checkGateRequirement(instance, check, {
+        blockPushCounts,
+        blockDirs,
+        pushEvents,
+        visitedCells,
+        markerSteps,
+      })
+    );
+    if (passed) {
+      counts[instance.type] = (counts[instance.type] || 0) + 1;
+    }
+  });
+
+  return { counts };
+}
+
+function meetsGateCounts(counts, gateConfig) {
+  const normalized = normalizeGateConfig(gateConfig);
+  return Object.entries(normalized).every(([type, required]) => {
+    if (!required) {
+      return true;
+    }
+    return (counts[type] || 0) >= required;
+  });
+}
+
+function analyzeSolutionShape(solution) {
+  if (!solution || !Array.isArray(solution.moves) || solution.moves.length === 0) {
+    return {
+      turns: 0,
+      verticalMoves: 0,
+      maxStraightRun: 0,
+      maxPushRun: 0,
+    };
+  }
+
+  let turns = 0;
+  let verticalMoves = 0;
+  let maxStraightRun = 1;
+  let straightRun = 1;
+  let maxPushRun = 0;
+  let pushRun = 0;
+
+  solution.moves.forEach((move, index) => {
+    if (move.dir === "up" || move.dir === "down") {
+      verticalMoves += 1;
+    }
+    if (move.push) {
+      pushRun += 1;
+      if (pushRun > maxPushRun) {
+        maxPushRun = pushRun;
+      }
+    } else {
+      pushRun = 0;
+    }
+
+    if (index === 0) {
+      return;
+    }
+    const previous = solution.moves[index - 1];
+    if (previous.dir !== move.dir) {
+      turns += 1;
+      straightRun = 1;
+    } else {
+      straightRun += 1;
+      if (straightRun > maxStraightRun) {
+        maxStraightRun = straightRun;
+      }
+    }
+  });
+
+  return {
+    turns,
+    verticalMoves,
+    maxStraightRun,
+    maxPushRun,
+  };
+}
+
 function countMonsterReachableTiles(tiles, width, height, start) {
   const startTile = tiles[start.y][start.x];
   if (!canMonsterMoveInto(startTile)) {
@@ -839,111 +1449,47 @@ function monstersHaveMobility(state, minTiles) {
   );
 }
 
-function generateLevel({ level, seed, width, height, onProgress }) {
-  const minPushes = 5 * level;
-  const minUnintuitive = 2 * level;
-  const minDistinctBlocks = 10 * level;
-  const minRevisitedSquares = 10 * level;
-  const attemptsPerSize = 30;
-  const maxSizeBoost = 6;
-  const sizeStep = 2;
+function generateLevel({ level, seed, width, height, gateConfig, onProgress }) {
+  const normalizedGateConfig = normalizeGateConfig(gateConfig);
+  const totalGates = Object.values(normalizedGateConfig).reduce(
+    (sum, value) => sum + (Number.isFinite(value) ? value : 0),
+    0
+  );
   const minMonsterTiles = 5;
-  const quickSolveLimit = 80000 + level * 4000;
-  const fullSolveLimit = 180000 + level * 12000;
-  const maxTotalAttempts = attemptsPerSize * (maxSizeBoost + 1) * 3;
+  const fullSolveLimit = Math.max(
+    180000 + level * 12000,
+    600000 + totalGates * 270000
+  );
+  const notifyProgress = typeof onProgress === "function" ? onProgress : null;
+  const reportReject = (reason, extra = null) => {
+    if (!notifyProgress) {
+      return;
+    }
+    notifyProgress({
+      event: "reject",
+      reason,
+      detail: extra,
+    });
+  };
 
   let attempts = 0;
-  let sizeBoost = 0;
-  let bestCandidate = null;
-  let bestScore = -Infinity;
-  const notifyProgress = typeof onProgress === "function" ? onProgress : null;
 
-  const bumpSize = () => {
-    if (attempts % attemptsPerSize === 0) {
-      sizeBoost = Math.min(sizeBoost + 1, maxSizeBoost);
-    }
-  };
-
-  const clearBlocks = (layout) => {
-    layout.tiles.forEach((row, y) => {
-      row.forEach((tile, x) => {
-        if (tile.type === "block") {
-          layout.tiles[y][x] = createEmptyTile();
-        }
-      });
-    });
-    return layout;
-  };
-
-  const finalizeCandidate = (candidate) => {
-    const populated = populateLevelFeatures(candidate.base, {
-      level,
-      usedSquares: candidate.solution.usedSquares,
-    });
-    return {
-      ...populated,
-      solver: {
-        moves: candidate.solution.moves,
-        start: candidate.solution.start,
-        pushes: candidate.solution.pushes,
-        unintuitivePushes: candidate.solution.unintuitivePushes,
-        distinctBlocksPushed: candidate.solution.distinctBlocksPushed,
-        revisitedSquares: candidate.solution.revisitedSquares,
-        revisitEvents: candidate.solution.revisitEvents,
-      },
-      generationAttempts: attempts,
-    };
-  };
-
-  while (true) {
-    if (attempts >= maxTotalAttempts && bestCandidate) {
-      return finalizeCandidate(bestCandidate);
-    }
-    if (attempts >= maxTotalAttempts && !bestCandidate) {
-      const fallbackBase = clearBlocks(
-        generateBaseLayout({
-          level,
-          seed: seed + attempts * 997,
-          width: width + sizeBoost * sizeStep,
-          height: height + sizeBoost * sizeStep,
-        })
-      );
-      const fallbackSolution = solveBlockPuzzle({
-        ...fallbackBase,
-        maxStates: fullSolveLimit,
-      });
-      if (fallbackSolution) {
-        return finalizeCandidate({ base: fallbackBase, solution: fallbackSolution });
-      }
-    }
-    const attemptSeed = seed + attempts * 173;
-    const attemptWidth = width + sizeBoost * sizeStep;
-    const attemptHeight = height + sizeBoost * sizeStep;
-    const base = generateBaseLayout({
+  while (attempts < SOLUTION_FIRST_MAX_ATTEMPTS) {
+    attempts += 1;
+    const attemptSeed = seed + attempts * 997;
+    const base = buildSolutionFirstLayout({
       level,
       seed: attemptSeed,
-      width: attemptWidth,
-      height: attemptHeight,
+      gateConfig: normalizedGateConfig,
     });
-    attempts += 1;
     if (notifyProgress) {
       notifyProgress({
         attempt: attempts,
-        width: attemptWidth,
-        height: attemptHeight,
+        width: base.width,
+        height: base.height,
         seed: attemptSeed,
-        sizeBoost,
+        sizeBoost: 0,
       });
-    }
-
-    const quick = solveBlockPuzzle({
-      ...base,
-      maxPushes: Math.max(0, minPushes - 1),
-      maxStates: quickSolveLimit,
-    });
-    if (quick) {
-      bumpSize();
-      continue;
     }
 
     const solution = solveBlockPuzzle({
@@ -951,28 +1497,57 @@ function generateLevel({ level, seed, width, height, onProgress }) {
       maxStates: fullSolveLimit,
     });
     if (!solution) {
-      bumpSize();
+      reportReject("unsolved");
       continue;
     }
 
-    const score =
-      solution.pushes * 5 +
-      solution.unintuitivePushes * 12 +
-      solution.distinctBlocksPushed * 8 +
-      solution.revisitedSquares * 6;
-    if (score > bestScore) {
-      bestScore = score;
-      bestCandidate = { base, solution };
+    if (totalGates > 0 && solution.pushes < totalGates) {
+      reportReject("tooFewPushes", { pushes: solution.pushes, required: totalGates });
+      continue;
     }
-
     if (
-      solution.pushes < minPushes ||
-      solution.unintuitivePushes < minUnintuitive ||
-      solution.distinctBlocksPushed < minDistinctBlocks ||
-      solution.revisitedSquares < minRevisitedSquares
+      totalGates > 0 &&
+      solution.distinctBlocksPushed <
+        Math.max(1, Math.floor(totalGates * 0.45))
     ) {
-      bumpSize();
+      reportReject("tooFewDistinctBlocks", {
+        distinctBlocksPushed: solution.distinctBlocksPushed,
+        required: Math.max(1, Math.floor(totalGates * 0.45)),
+      });
       continue;
+    }
+
+    const interaction = analyzeGateInteractions({
+      tiles: base.tiles,
+      width: base.width,
+      height: base.height,
+      startArea: base.startArea,
+      solution,
+      gadgetInstances: base.gadgetInstances || [],
+    });
+    if (!meetsGateCounts(interaction.counts, normalizedGateConfig)) {
+      reportReject("gateCounts", { counts: interaction.counts });
+      continue;
+    }
+
+    const shape = analyzeSolutionShape(solution);
+    if (totalGates > 0) {
+      const minTurns = Math.max(2, Math.ceil(totalGates * 0.5));
+      const minVerticalMoves = Math.max(2, Math.ceil(totalGates * 0.35));
+      const maxStraightRun = 16 + Math.floor(totalGates / 2);
+      if (
+        shape.turns < minTurns ||
+        shape.verticalMoves < minVerticalMoves ||
+        shape.maxStraightRun > maxStraightRun
+      ) {
+        reportReject("shape", {
+          shape,
+          minTurns,
+          minVerticalMoves,
+          maxStraightRun,
+        });
+        continue;
+      }
     }
 
     const populated = populateLevelFeatures(base, {
@@ -980,7 +1555,7 @@ function generateLevel({ level, seed, width, height, onProgress }) {
       usedSquares: solution.usedSquares,
     });
     if (!monstersHaveMobility(populated, minMonsterTiles)) {
-      bumpSize();
+      reportReject("monsterMobility");
       continue;
     }
 
@@ -998,6 +1573,17 @@ function generateLevel({ level, seed, width, height, onProgress }) {
       generationAttempts: attempts,
     };
   }
+
+  const fallback = buildSolutionFirstLayout({
+    level,
+    seed,
+    gateConfig: normalizedGateConfig,
+  });
+  return {
+    ...fallback,
+    solver: null,
+    generationAttempts: attempts,
+  };
 }
 
 function createTokens({ tokens, tokenCount, startArea }) {
@@ -1038,11 +1624,20 @@ function createGame({
   tokens = null,
   tokenCount = 4,
   monsterConfig = null,
+  gateConfig = null,
+  fogEnabled = true,
   onProgress = null,
 } = {}) {
   const width = DEFAULT_WIDTH;
   const height = DEFAULT_HEIGHT;
-  const generated = generateLevel({ level, seed, width, height, onProgress });
+  const generated = generateLevel({
+    level,
+    seed,
+    width,
+    height,
+    gateConfig,
+    onProgress,
+  });
   const nextTokens = createTokens({
     tokens,
     tokenCount,
@@ -1063,6 +1658,7 @@ function createGame({
     tokens: nextTokens,
     monsters: generated.monsters,
     monsterConfig: nextMonsterConfig,
+    fogEnabled: fogEnabled !== false,
     solver: generated.solver || null,
     generationAttempts: generated.generationAttempts || 1,
     combat: null,
@@ -1226,6 +1822,10 @@ function loadSnapshot(state, snapshot) {
     tokens: nextTokens,
     monsters,
     monsterConfig: state.monsterConfig,
+    fogEnabled:
+      typeof snapshot.fogEnabled === "boolean"
+        ? snapshot.fogEnabled
+        : state.fogEnabled !== false,
     solver,
     generationAttempts: Number.isFinite(snapshot.generationAttempts)
       ? snapshot.generationAttempts
@@ -1431,16 +2031,23 @@ function serializeCombat(state, role, socketId) {
     }),
   };
 }
-function serializeTile(tile, count, role, visible, uncovered) {
+function serializeTile(tile, count, role, visible, uncovered, fogEnabled, forceUnknown) {
   if (role === "player" && !visible) {
     return { visible: false };
+  }
+  if (role === "player" && forceUnknown) {
+    return {
+      visible: true,
+      uncovered: false,
+      type: "unknown",
+    };
   }
   const payload = {
     visible: true,
     uncovered,
     type: tile.type,
   };
-  if (role === "player" && tile.type === "trap" && !uncovered) {
+  if (role === "player" && fogEnabled && tile.type === "trap" && !uncovered) {
     payload.type = "unknown";
   }
   if (tile.type === "block") {
@@ -1452,7 +2059,7 @@ function serializeTile(tile, count, role, visible, uncovered) {
   if (tile.type === "trap" && role === "dm") {
     payload.message = tile.message || "";
   }
-  if (tile.type === "empty" && (uncovered || role === "dm")) {
+  if (tile.type === "empty" && (uncovered || role === "dm" || !fogEnabled)) {
     payload.number = count;
   }
   if (tile.type === "exit") {
@@ -1463,7 +2070,15 @@ function serializeTile(tile, count, role, visible, uncovered) {
 
 function serializeState(state, { role, socketId }) {
   const counts = computeTrapAdjacency(state.tiles, state.width, state.height);
-  const visibility = role === "dm" ? null : computeVisibility(state.tiles, state.width, state.height);
+  const fogEnabled = state.fogEnabled !== false;
+  const maskTrapDangerForPlayers = role === "player" && !fogEnabled;
+  const trapDangerMask = maskTrapDangerForPlayers
+    ? computeTrapDangerMask(state.tiles, state.width, state.height)
+    : null;
+  const visibility =
+    role === "dm" || !fogEnabled
+      ? buildGrid(state.width, state.height, () => true)
+      : computeVisibility(state.tiles, state.width, state.height);
   const tokens = state.tokens.map((token) => ({
     id: token.id,
     name: token.name,
@@ -1476,7 +2091,6 @@ function serializeState(state, { role, socketId }) {
     ownedBySelf: token.ownerId === socketId,
   }));
 
-  const players = state.tokens;
   const monsterConfig = normalizeMonsterConfig(state.monsterConfig);
   const monsters = state.monsters
     .map((monster) => {
@@ -1490,10 +2104,17 @@ function serializeState(state, { role, socketId }) {
           avatar: config.avatar || "",
         };
       }
-      const visibleToPlayer = players.some(
-        (token) => manhattan(token, monster) <= 10
-      );
-      if (!visibleToPlayer) {
+      if (maskTrapDangerForPlayers) {
+        const config = monsterConfig[monster.type] || {};
+        return {
+          id: monster.id,
+          type: monster.type,
+          x: monster.x,
+          y: monster.y,
+          avatar: config.avatar || "",
+        };
+      }
+      if (!visibility[monster.y] || !visibility[monster.y][monster.x]) {
         return null;
       }
       const config = monsterConfig[monster.type] || {};
@@ -1510,8 +2131,12 @@ function serializeState(state, { role, socketId }) {
   const tiles = state.tiles.map((row, y) =>
     row.map((tile, x) => {
       const uncovered = tile.uncovered;
-      const visible = role === "dm" ? true : visibility[y][x];
-      return serializeTile(tile, counts[y][x], role, visible, uncovered);
+      const visible = visibility[y][x];
+      const forceUnknown = Boolean(trapDangerMask && trapDangerMask[y] && trapDangerMask[y][x]) &&
+        !uncovered &&
+        tile.type !== "block" &&
+        tile.type !== "rock";
+      return serializeTile(tile, counts[y][x], role, visible, uncovered, fogEnabled, forceUnknown);
     })
   );
 
@@ -1523,6 +2148,7 @@ function serializeState(state, { role, socketId }) {
     width: state.width,
     height: state.height,
     startArea: state.startArea,
+    fogEnabled,
     tiles,
     tokens,
     monsters,
@@ -1859,10 +2485,6 @@ function applyMove(state, move, context) {
     return { ok: false, error: "Move one tile at a time." };
   }
   const now = context.now || Date.now();
-  const minInterval = 1000 / PLAYER_SPEED_TPS;
-  if (now - token.lastMoveAt < minInterval) {
-    return { ok: false, error: "Slow down. You can move 3 tiles per second." };
-  }
   const sounds = [];
 
   if (findTokenAt(state, target.x, target.y)) {
@@ -2056,6 +2678,209 @@ function applyMonsterMove(state, move, context) {
   return { ok: true, sounds };
 }
 
+function nextMonsterId(state) {
+  let maxId = 0;
+  state.monsters.forEach((monster) => {
+    if (typeof monster.id !== "string") {
+      return;
+    }
+    const match = monster.id.match(/^m(\d+)$/);
+    if (!match) {
+      return;
+    }
+    const value = Number.parseInt(match[1], 10);
+    if (Number.isFinite(value) && value > maxId) {
+      maxId = value;
+    }
+  });
+  return `m${maxId + 1}`;
+}
+
+function removeMonsterAt(state, x, y) {
+  const index = state.monsters.findIndex((monster) => monster.x === x && monster.y === y);
+  if (index === -1) {
+    return false;
+  }
+  const [removed] = state.monsters.splice(index, 1);
+  if (removed && removed.id) {
+    removeCombatEntry(state, removed.id);
+  }
+  if (state.monsters.length === 0) {
+    state.combat = null;
+  }
+  return true;
+}
+
+function findFallbackExit(state, avoidX, avoidY) {
+  for (let y = state.height - 2; y >= 1; y -= 1) {
+    for (let x = state.width - 2; x >= 1; x -= 1) {
+      if (x === avoidX && y === avoidY) {
+        continue;
+      }
+      if (findTokenAt(state, x, y) || findMonsterAt(state, x, y)) {
+        continue;
+      }
+      const tile = state.tiles[y][x];
+      if (tile.type === "empty" || tile.type === "treasure") {
+        return { x, y };
+      }
+    }
+  }
+  return null;
+}
+
+function setFogOfWar(state, enabled, role) {
+  if (role !== "dm") {
+    return { ok: false, error: "Only the DM can toggle fog of war." };
+  }
+  state.fogEnabled = enabled !== false;
+  return { ok: true };
+}
+
+function editMapTile(state, payload, role) {
+  if (role !== "dm") {
+    return { ok: false, error: "Only the DM can edit the map." };
+  }
+  const x = Number.parseInt(payload && payload.x, 10);
+  const y = Number.parseInt(payload && payload.y, 10);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !inBounds(x, y, state.width, state.height)) {
+    return { ok: false, error: "That tile is out of bounds." };
+  }
+  if (findTokenAt(state, x, y)) {
+    return { ok: false, error: "Cannot edit a tile occupied by a player token." };
+  }
+
+  const mode = payload && payload.mode;
+  if (mode === "erase-monster") {
+    removeMonsterAt(state, x, y);
+    state.solver = null;
+    return { ok: true };
+  }
+
+  if (mode === "monster") {
+    const type = payload && payload.monsterType;
+    if (!MONSTER_TYPES.includes(type)) {
+      return { ok: false, error: "Unknown monster type." };
+    }
+    const tile = state.tiles[y][x];
+    if (!canMonsterMoveInto(tile)) {
+      return { ok: false, error: "Monsters must be placed on empty or treasure tiles." };
+    }
+    const existing = findMonsterAt(state, x, y);
+    if (existing) {
+      existing.type = type;
+      existing.lastMoveAt = 0;
+    } else {
+      state.monsters.push({
+        id: nextMonsterId(state),
+        type,
+        x,
+        y,
+        lastMoveAt: 0,
+      });
+    }
+    state.solver = null;
+    return { ok: true };
+  }
+
+  if (mode !== "tile") {
+    return { ok: false, error: "Unknown edit mode." };
+  }
+
+  const tileType = payload && payload.tileType;
+  const validTileTypes = new Set(["rock", "empty", "block", "trap", "treasure", "exit"]);
+  if (!validTileTypes.has(tileType)) {
+    return { ok: false, error: "Unknown tile type." };
+  }
+
+  if (tileType === "exit") {
+    const previousExit = state.exit;
+    if (previousExit && inBounds(previousExit.x, previousExit.y, state.width, state.height)) {
+      const prevTile = state.tiles[previousExit.y][previousExit.x];
+      if (prevTile && prevTile.type === "exit") {
+        state.tiles[previousExit.y][previousExit.x] = createEmptyTile();
+      }
+    }
+    state.tiles[y][x] = { type: "exit", uncovered: false };
+    state.exit = { x, y };
+    removeMonsterAt(state, x, y);
+    state.solver = null;
+    return { ok: true };
+  }
+
+  if (tileType === "block") {
+    const validDirections = new Set(DIRECTIONS.map((dir) => dir.name));
+    const directions = Array.isArray(payload && payload.directions)
+      ? payload.directions.filter((dir) => validDirections.has(dir))
+      : [];
+    if (directions.length === 0) {
+      return { ok: false, error: "Blocks need at least one valid push direction." };
+    }
+    state.tiles[y][x] = {
+      type: "block",
+      uncovered: false,
+      directions: [...new Set(directions)],
+    };
+    removeMonsterAt(state, x, y);
+    state.solver = null;
+    return { ok: true };
+  }
+
+  if (tileType === "trap") {
+    state.tiles[y][x] = {
+      type: "trap",
+      uncovered: false,
+      message: TRAP_MESSAGES[0],
+    };
+    removeMonsterAt(state, x, y);
+    state.solver = null;
+    return { ok: true };
+  }
+
+  if (tileType === "treasure") {
+    state.tiles[y][x] = {
+      type: "treasure",
+      uncovered: false,
+      value: 10,
+    };
+    state.solver = null;
+    return { ok: true };
+  }
+
+  if (tileType === "rock") {
+    let fallbackExit = null;
+    if (state.exit && state.exit.x === x && state.exit.y === y) {
+      fallbackExit = findFallbackExit(state, x, y);
+      if (!fallbackExit) {
+        return { ok: false, error: "Map needs at least one reachable exit tile." };
+      }
+    }
+    state.tiles[y][x] = createRockTile();
+    removeMonsterAt(state, x, y);
+    if (fallbackExit) {
+      state.exit = fallbackExit;
+      state.tiles[state.exit.y][state.exit.x] = { type: "exit", uncovered: false };
+    }
+    state.solver = null;
+    return { ok: true };
+  }
+
+  let fallbackExit = null;
+  if (state.exit && state.exit.x === x && state.exit.y === y) {
+    fallbackExit = findFallbackExit(state, x, y);
+    if (!fallbackExit) {
+      return { ok: false, error: "Map needs at least one reachable exit tile." };
+    }
+  }
+  state.tiles[y][x] = createEmptyTile();
+  if (fallbackExit) {
+    state.exit = fallbackExit;
+    state.tiles[state.exit.y][state.exit.x] = { type: "exit", uncovered: false };
+  }
+  state.solver = null;
+  return { ok: true };
+}
+
 function setTokenInitiativeMod(state, tokenId, mod, socketId, role) {
   const token = state.tokens.find((entry) => entry.id === tokenId);
   if (!token) {
@@ -2222,6 +3047,7 @@ function advanceLevel(state) {
     tokens: nextTokens,
     tokenCount: state.tokens.length,
     monsterConfig: state.monsterConfig,
+    fogEnabled: state.fogEnabled !== false,
   });
 }
 
@@ -2240,6 +3066,7 @@ function resetLevel(state) {
     tokens: nextTokens,
     tokenCount: state.tokens.length,
     monsterConfig: state.monsterConfig,
+    fogEnabled: state.fogEnabled !== false,
   });
 }
 
@@ -2593,6 +3420,8 @@ module.exports = {
   setTokenName,
   setTokenAvatar,
   setTokenInitiativeMod,
+  setFogOfWar,
+  editMapTile,
   setMonsterConfig,
   setCombatInitiative,
   resortCombat,

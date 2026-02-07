@@ -191,6 +191,68 @@ body::after {
   color: var(--text-muted);
 }
 
+.fog-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.fog-toggle input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+}
+
+.map-editor {
+  width: 100%;
+  margin-top: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(10, 8, 5, 0.7);
+  display: grid;
+  gap: 10px;
+}
+
+.map-editor-header {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  color: var(--text-muted);
+}
+
+.map-editor-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.map-editor-tool {
+  background: rgba(17, 13, 8, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--text);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.map-editor-tool.active {
+  border-color: rgba(224, 194, 124, 0.8);
+  box-shadow: 0 0 0 1px rgba(224, 194, 124, 0.3);
+  color: var(--accent);
+}
+
+.map-editor-hint {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
 .solver-hidden {
   display: none;
 }
@@ -1026,6 +1088,10 @@ body.loaded .mine-board {
   pointer-events: none;
 }
 
+.mine-grid.map-editing .mine-cell {
+  cursor: crosshair;
+}
+
 .mine-cell {
   width: var(--cell-size);
   aspect-ratio: 1;
@@ -1120,10 +1186,11 @@ body.loaded .mine-board {
 }
 
 .block-arrow-multi {
-  width: clamp(18px, 2.6vw, 26px);
-  height: clamp(18px, 2.6vw, 26px);
+  width: clamp(20px, 2.8vw, 28px);
+  height: clamp(20px, 2.8vw, 28px);
   color: var(--accent);
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
+  display: block;
 }
 
 .block-arrow-right {

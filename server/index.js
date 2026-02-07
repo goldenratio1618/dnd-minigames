@@ -601,6 +601,7 @@ minesNamespace.on("connection", (socket) => {
       tokens: preservedTokens,
       tokenCount: preservedTokens.length,
       monsterConfig: minesState.monsterConfig,
+      fogEnabled: minesState.fogEnabled !== false,
     });
     broadcastMinesState();
   });
@@ -728,6 +729,32 @@ minesNamespace.on("connection", (socket) => {
     const result = minesGame.setMonsterConfig(
       minesState,
       payload && payload.type,
+      payload,
+      socket.data.role || "player"
+    );
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("setFogOfWar", (payload) => {
+    const result = minesGame.setFogOfWar(
+      minesState,
+      payload && payload.enabled,
+      socket.data.role || "player"
+    );
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("editMapTile", (payload) => {
+    const result = minesGame.editMapTile(
+      minesState,
       payload,
       socket.data.role || "player"
     );

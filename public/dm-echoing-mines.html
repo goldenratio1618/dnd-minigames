@@ -41,9 +41,26 @@
         </div>
         <div class="panel-row">
           <button id="save-map" type="button">Save map</button>
+          <button id="export-map" type="button">Export map</button>
           <label for="load-map-select">Saved maps</label>
           <select id="load-map-select"></select>
           <button id="load-map-button" type="button">Load map</button>
+          <button id="load-map-disk-button" type="button">Map from Disk</button>
+          <label class="fog-toggle" for="fog-toggle-input">
+            <input id="fog-toggle-input" type="checkbox" checked />
+            Fog of war
+          </label>
+          <input
+            id="load-map-disk-input"
+            type="file"
+            accept=".json,application/json"
+            style="display: none"
+          />
+        </div>
+        <div class="map-editor" id="map-editor">
+          <div class="map-editor-header">Map editor</div>
+          <div class="map-editor-tools" id="map-editor-tools"></div>
+          <div class="map-editor-hint">Select a brush, then click a tile to paint it.</div>
         </div>
         <div class="monster-config" id="monster-config">
           <div class="monster-config-header">Monster loadout</div>

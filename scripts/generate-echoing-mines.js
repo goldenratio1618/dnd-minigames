@@ -24,6 +24,34 @@ const outputDir = getArg(
 const cellSize = Number.parseInt(getArg("--cell", "16"), 10) || 16;
 const logEvery = Math.max(1, Number.parseInt(getArg("--log-every", "10"), 10) || 10);
 
+function readCount(flag) {
+  if (!process.argv.includes(flag)) {
+    return null;
+  }
+  const value = Number.parseInt(getArg(flag, "0"), 10);
+  return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+const gateConfig = {};
+const gateOneWay = readCount("--gate-one-way");
+if (gateOneWay !== null) gateConfig.oneWay = gateOneWay;
+const gateTwoWay = readCount("--gate-two-way");
+if (gateTwoWay !== null) gateConfig.twoWay = gateTwoWay;
+const gateToggle = readCount("--gate-toggle");
+if (gateToggle !== null) gateConfig.toggle = gateToggle;
+const gateSwitchback = readCount("--gate-switchback");
+if (gateSwitchback !== null) gateConfig.switchback = gateSwitchback;
+const gateShared = readCount("--gate-shared");
+if (gateShared !== null) gateConfig.shared = gateShared;
+const gateBuffer = readCount("--gate-buffer");
+if (gateBuffer !== null) gateConfig.buffer = gateBuffer;
+const gateChain = readCount("--gate-chain");
+if (gateChain !== null) gateConfig.chain = gateChain;
+const gateInterlock = readCount("--gate-interlock");
+if (gateInterlock !== null) gateConfig.interlock = gateInterlock;
+const gateDoorWall = readCount("--gate-doorwall");
+if (gateDoorWall !== null) gateConfig.doorWall = gateDoorWall;
+
 function crc32(buf) {
   let crc = 0xffffffff;
   for (let i = 0; i < buf.length; i += 1) {
@@ -230,6 +258,8 @@ function main() {
   const seeds = generateSeeds(toSeed(baseSeedRaw), count);
   const summary = [];
 
+  const gateConfigArg = Object.keys(gateConfig).length > 0 ? gateConfig : null;
+
   seeds.forEach((seed, index) => {
     const seedLabel = `[${index + 1}/${seeds.length}]`;
     console.log(`${seedLabel} Generating level ${level} with seed ${seed}...`);
@@ -237,6 +267,7 @@ function main() {
     const game = mines.createGame({
       level,
       seed,
+      gateConfig: gateConfigArg,
       onProgress: (info) => {
         if (!info || !Number.isFinite(info.attempt)) {
           return;

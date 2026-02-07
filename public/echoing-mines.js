@@ -28,8 +28,13 @@
   const solveLevelButton = document.getElementById("solve-level");
   const generationAttemptsEl = document.getElementById("generation-attempts");
   const saveMapButton = document.getElementById("save-map");
+  const exportMapButton = document.getElementById("export-map");
   const loadMapButton = document.getElementById("load-map-button");
   const loadMapSelect = document.getElementById("load-map-select");
+  const loadMapDiskButton = document.getElementById("load-map-disk-button");
+  const loadMapDiskInput = document.getElementById("load-map-disk-input");
+  const fogToggleInput = document.getElementById("fog-toggle-input");
+  const mapEditorToolsEl = document.getElementById("map-editor-tools");
 
   const defaultMessage = messageBar ? messageBar.innerHTML : "";
   const SAVE_KEY = "echoingMinesSavedMaps";
@@ -46,6 +51,7 @@
   let selectedMonsterId = null;
   let dragMonsterId = null;
   let dragMonsterFrom = null;
+  let selectedMapBrush = null;
   let savedMaps = [];
   const solverPlayback = {
     active: false,
@@ -56,6 +62,57 @@
   };
 
   const DIRECTION_ORDER = ["up", "right", "down", "left"];
+  const MAP_BRUSHES = [
+    { id: "erase", label: "Clear", payload: { mode: "tile", tileType: "empty" } },
+    { id: "rock", label: "Rock", payload: { mode: "tile", tileType: "rock" } },
+    { id: "trap", label: "Trap", payload: { mode: "tile", tileType: "trap" } },
+    { id: "treasure", label: "Treasure", payload: { mode: "tile", tileType: "treasure" } },
+    { id: "exit", label: "Exit", payload: { mode: "tile", tileType: "exit" } },
+    {
+      id: "block-right",
+      label: "Block >",
+      payload: { mode: "tile", tileType: "block", directions: ["right"] },
+    },
+    {
+      id: "block-left",
+      label: "Block <",
+      payload: { mode: "tile", tileType: "block", directions: ["left"] },
+    },
+    {
+      id: "block-up",
+      label: "Block ^",
+      payload: { mode: "tile", tileType: "block", directions: ["up"] },
+    },
+    {
+      id: "block-down",
+      label: "Block v",
+      payload: { mode: "tile", tileType: "block", directions: ["down"] },
+    },
+    {
+      id: "block-h",
+      label: "Block <>",
+      payload: { mode: "tile", tileType: "block", directions: ["left", "right"] },
+    },
+    {
+      id: "block-v",
+      label: "Block ^v",
+      payload: { mode: "tile", tileType: "block", directions: ["up", "down"] },
+    },
+    {
+      id: "block-all",
+      label: "Block +",
+      payload: {
+        mode: "tile",
+        tileType: "block",
+        directions: ["up", "right", "down", "left"],
+      },
+    },
+    { id: "monster-green", label: "Monster G", payload: { mode: "monster", monsterType: "green" } },
+    { id: "monster-yellow", label: "Monster Y", payload: { mode: "monster", monsterType: "yellow" } },
+    { id: "monster-red", label: "Monster R", payload: { mode: "monster", monsterType: "red" } },
+    { id: "monster-violet", label: "Monster V", payload: { mode: "monster", monsterType: "violet" } },
+    { id: "monster-erase", label: "Remove monster", payload: { mode: "erase-monster" } },
+  ];
   const SOUND_FILES = {
     "block-drag": "/sounds/stoneblockdragwoodgrind-82327.mp3",
     "gold-break": "/sounds/breaking-glass-83809.mp3",
@@ -102,19 +159,19 @@
     const arrowHeads = [];
 
     if (kind === "horizontal") {
-      line.setAttribute("d", "M6 12H18");
-      arrowHeads.push("M6 12L10 8V16Z");
-      arrowHeads.push("M18 12L14 8V16Z");
+      line.setAttribute("d", "M8 12H16");
+      arrowHeads.push("M5 12L8.5 9.5V14.5Z");
+      arrowHeads.push("M19 12L15.5 9.5V14.5Z");
     } else if (kind === "vertical") {
-      line.setAttribute("d", "M12 6V18");
-      arrowHeads.push("M12 6L8 10H16Z");
-      arrowHeads.push("M12 18L8 14H16Z");
+      line.setAttribute("d", "M12 8V16");
+      arrowHeads.push("M12 5L9.5 8.5H14.5Z");
+      arrowHeads.push("M12 19L9.5 15.5H14.5Z");
     } else {
-      line.setAttribute("d", "M6 12H18M12 6V18");
-      arrowHeads.push("M6 12L10 8V16Z");
-      arrowHeads.push("M18 12L14 8V16Z");
-      arrowHeads.push("M12 6L8 10H16Z");
-      arrowHeads.push("M12 18L8 14H16Z");
+      line.setAttribute("d", "M8 12H16M12 8V16");
+      arrowHeads.push("M5 12L8.5 9.5V14.5Z");
+      arrowHeads.push("M19 12L15.5 9.5V14.5Z");
+      arrowHeads.push("M12 5L9.5 8.5H14.5Z");
+      arrowHeads.push("M12 19L9.5 15.5H14.5Z");
     }
 
     svg.appendChild(line);
@@ -298,6 +355,51 @@
     }
   }
 
+  function updateFogToggle() {
+    if (!isDM || !fogToggleInput || !state) {
+      return;
+    }
+    fogToggleInput.checked = state.fogEnabled !== false;
+  }
+
+  function renderMapEditorTools() {
+    if (!isDM || !mapEditorToolsEl) {
+      return;
+    }
+    mapEditorToolsEl.innerHTML = "";
+    MAP_BRUSHES.forEach((brush) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "map-editor-tool";
+      button.textContent = brush.label;
+      if (selectedMapBrush && selectedMapBrush.id === brush.id) {
+        button.classList.add("active");
+      }
+      button.addEventListener("click", () => {
+        if (selectedMapBrush && selectedMapBrush.id === brush.id) {
+          selectedMapBrush = null;
+        } else {
+          selectedMapBrush = brush;
+        }
+        renderMapEditorTools();
+        renderGrid();
+      });
+      mapEditorToolsEl.appendChild(button);
+    });
+  }
+
+  function paintTileWithBrush(x, y) {
+    if (!isDM || !selectedMapBrush || solverPlayback.active) {
+      return;
+    }
+    const payload = {
+      x,
+      y,
+      ...selectedMapBrush.payload,
+    };
+    socket.emit("editMapTile", payload);
+  }
+
   function normalizeSnapshotTile(tile) {
     if (!tile || !tile.type) {
       return { type: "rock", uncovered: false };
@@ -340,6 +442,7 @@
       width: current.width,
       height: current.height,
       startArea: current.startArea,
+      fogEnabled: current.fogEnabled !== false,
       exit: current.exit,
       generationAttempts: current.generationAttempts || 1,
       solver: current.solver || null,
@@ -353,6 +456,15 @@
           }))
         : [],
     };
+  }
+
+  function readFileText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
+      reader.onerror = () => reject(new Error("Could not read file."));
+      reader.readAsText(file);
+    });
   }
 
   function inBounds(x, y, width, height) {
@@ -947,6 +1059,10 @@
     }
     gridEl.innerHTML = "";
     gridEl.classList.toggle("solver-playing", solverPlayback.active);
+    gridEl.classList.toggle(
+      "map-editing",
+      isDM && Boolean(selectedMapBrush) && !solverPlayback.active
+    );
     gridEl.style.gridTemplateColumns = `repeat(${state.width}, var(--cell-size))`;
 
     const tokenMap = new Map();
@@ -1055,10 +1171,15 @@
                 : "?";
             }
             const draggable =
-              !isInteractionLocked() && (isDM || token.ownedBySelf || !token.owned);
+              !isInteractionLocked() &&
+              !(isDM && selectedMapBrush) &&
+              (isDM || token.ownedBySelf || !token.owned);
             tokenEl.draggable = draggable;
             if (draggable) {
               tokenEl.addEventListener("click", () => {
+                if (isDM && selectedMapBrush) {
+                  return;
+                }
                 if (isInteractionLocked()) {
                   return;
                 }
@@ -1102,9 +1223,12 @@
           } else {
             monsterEl.textContent = monster.type.slice(0, 1).toUpperCase();
           }
-          if (isDM && !solverPlayback.active) {
+          if (isDM && !solverPlayback.active && !selectedMapBrush) {
             monsterEl.draggable = true;
             monsterEl.addEventListener("click", () => {
+              if (selectedMapBrush) {
+                return;
+              }
               selectedMonsterId = monster.id;
               selectedTokenId = null;
               renderGrid();
@@ -1188,6 +1312,11 @@
         });
 
         cell.addEventListener("click", (event) => {
+          if (isDM && selectedMapBrush && !solverPlayback.active) {
+            event.preventDefault();
+            paintTileWithBrush(x, y);
+            return;
+          }
           if (
             event.target &&
             (event.target.closest(".token-marker") ||
@@ -1328,6 +1457,8 @@
     updateDmTrapAlert();
     updateGenerationAttempts();
     updateSolverControls();
+    updateFogToggle();
+    renderMapEditorTools();
     if (levelDisplay) {
       levelDisplay.textContent = `Level ${state.level}`;
     }
@@ -1384,6 +1515,7 @@
   if (isDM) {
     loadSavedMaps();
     refreshSavedMaps();
+    renderMapEditorTools();
   }
 
   window.addEventListener("keydown", (event) => {
@@ -1419,6 +1551,12 @@
   if (isDM && dmTrapConfirm) {
     dmTrapConfirm.addEventListener("click", () => {
       socket.emit("resolveTrap");
+    });
+  }
+
+  if (isDM && fogToggleInput) {
+    fogToggleInput.addEventListener("change", () => {
+      socket.emit("setFogOfWar", { enabled: fogToggleInput.checked });
     });
   }
 
@@ -1488,6 +1626,29 @@
     });
   }
 
+  if (isDM && exportMapButton) {
+    exportMapButton.addEventListener("click", () => {
+      const current = liveState || state;
+      if (!current) {
+        return;
+      }
+      const snapshot = buildSnapshot(current);
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const filename = `echoing-mines-level-${current.level}-${current.width}x${current.height}-${timestamp}.json`;
+      const payload = JSON.stringify(snapshot, null, 2);
+      const blob = new Blob([payload], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setMessage(`Exported map as \"${filename}\".`);
+    });
+  }
+
   if (isDM && loadMapButton) {
     loadMapButton.addEventListener("click", () => {
       if (!loadMapSelect) {
@@ -1505,6 +1666,38 @@
         stopSolverPlayback();
       }
       socket.emit("loadMap", entry.snapshot);
+    });
+  }
+
+  if (isDM && loadMapDiskButton && loadMapDiskInput) {
+    loadMapDiskButton.addEventListener("click", () => {
+      loadMapDiskInput.value = "";
+      loadMapDiskInput.click();
+    });
+
+    loadMapDiskInput.addEventListener("change", async () => {
+      const file = loadMapDiskInput.files && loadMapDiskInput.files[0];
+      if (!file) {
+        return;
+      }
+      try {
+        const text = await readFileText(file);
+        const parsed = JSON.parse(text);
+        const snapshot = parsed && parsed.snapshot ? parsed.snapshot : parsed;
+        if (!snapshot || !Array.isArray(snapshot.tiles)) {
+          setMessage("Selected file is not a valid Echoing Mines snapshot.");
+          return;
+        }
+        if (solverPlayback.active) {
+          stopSolverPlayback();
+        }
+        socket.emit("loadMap", snapshot);
+        setMessage(`Loading map from "${file.name}"...`);
+      } catch (error) {
+        setMessage("Could not parse map file.");
+      } finally {
+        loadMapDiskInput.value = "";
+      }
     });
   }
 
