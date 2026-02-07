@@ -2550,6 +2550,7 @@ function applyMove(state, move, context) {
     token.gold += gain;
     state.tiles[target.y][target.x] = createEmptyTile();
     state.tiles[target.y][target.x].uncovered = true;
+    sounds.push("coinbag");
     return {
       ok: true,
       announcement: `${token.name || "A hero"} gains ${gain} gold.`,
