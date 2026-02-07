@@ -116,6 +116,7 @@
   const SOUND_FILES = {
     "block-drag": "/sounds/stoneblockdragwoodgrind-82327.mp3",
     "gold-break": "/sounds/breaking-glass-83809.mp3",
+    coinbag: "/sounds/freesound_community-coinbag-91016.mp3",
     "monster-howl": "/sounds/monster-howl-85304.mp3",
     "monster-roar": "/sounds/monster-warrior-roar-195877.mp3",
     "trap-explosion": "/sounds/explosion-sound-effect-425455.mp3",
