@@ -1,0 +1,1309 @@
+{
+  "level": 1,
+  "seed": 0,
+  "width": 19,
+  "height": 15,
+  "startArea": {
+    "x": 1,
+    "y": 1,
+    "size": 3
+  },
+  "fogEnabled": true,
+  "generationAttempts": 1,
+  "solver": null,
+  "tiles": [
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "treasure",
+        "uncovered": false,
+        "value": 39
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "treasure",
+        "uncovered": false,
+        "value": 39
+      },
+      {
+        "type": "trap",
+        "uncovered": false,
+        "message": "A rune flares and your pulse slows."
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "treasure",
+        "uncovered": false,
+        "value": 39
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "trap",
+        "uncovered": false,
+        "message": "A concealed mine detonates beneath your feet."
+      },
+      {
+        "type": "trap",
+        "uncovered": false,
+        "message": "A rune flares and your pulse slows."
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "treasure",
+        "uncovered": false,
+        "value": 17
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "left",
+          "right"
+        ]
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "left",
+          "right"
+        ]
+      },
+      {
+        "type": "treasure",
+        "uncovered": false,
+        "value": 39
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "treasure",
+        "uncovered": false,
+        "value": 39
+      },
+      {
+        "type": "trap",
+        "uncovered": false,
+        "message": "A rune flares and your pulse slows."
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "treasure",
+        "uncovered": false,
+        "value": 17
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "down"
+        ]
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "trap",
+        "uncovered": false,
+        "message": "A concealed mine detonates beneath your feet."
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "right"
+        ]
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "right"
+        ]
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "down"
+        ]
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "down"
+        ]
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "trap",
+        "uncovered": false,
+        "message": "A concealed mine detonates beneath your feet."
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "up"
+        ]
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "up",
+          "down"
+        ]
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "right"
+        ]
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "up"
+        ]
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "trap",
+        "uncovered": false,
+        "message": "A concealed mine detonates beneath your feet."
+      },
+      {
+        "type": "trap",
+        "uncovered": false,
+        "message": "A concealed mine detonates beneath your feet."
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "treasure",
+        "uncovered": false,
+        "value": 95
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "down"
+        ]
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "up",
+          "down"
+        ]
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "up",
+          "right",
+          "down",
+          "left"
+        ]
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "up",
+          "down"
+        ]
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "up"
+        ]
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "up",
+          "right",
+          "down",
+          "left"
+        ]
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "up"
+        ]
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "treasure",
+        "uncovered": false,
+        "value": 39
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "left",
+          "right"
+        ]
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "down"
+        ]
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "exit",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "treasure",
+        "uncovered": false,
+        "value": 39
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "left",
+          "right"
+        ]
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "right"
+        ]
+      },
+      {
+        "type": "block",
+        "uncovered": false,
+        "directions": [
+          "up",
+          "right",
+          "down",
+          "left"
+        ]
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "empty",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ],
+    [
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      },
+      {
+        "type": "rock",
+        "uncovered": false
+      }
+    ]
+  ],
+  "monsters": [
+    {
+      "id": "m1",
+      "type": "green",
+      "x": 11,
+      "y": 2
+    },
+    {
+      "id": "m2",
+      "type": "violet",
+      "x": 17,
+      "y": 1
+    },
+    {
+      "id": "m3",
+      "type": "red",
+      "x": 1,
+      "y": 10
+    }
+  ]
+}
