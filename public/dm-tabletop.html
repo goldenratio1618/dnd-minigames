@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Gairos Tabletop - DM</title>
+    <link rel="icon" type="image/png" href="/minigames%20favicon.png" />
+    <link rel="stylesheet" href="/tabletop.css" />
+  </head>
+  <body data-default-role="dm">
+    <div id="tabletop-root" class="tt-root">
+      <aside class="tt-left">
+        <section class="tt-card" id="auth-card">
+          <h2>Account</h2>
+          <div id="auth-status">Connecting...</div>
+          <div id="auth-forms">
+            <form id="login-form" class="tt-form">
+              <input id="login-username" type="text" placeholder="Username" autocomplete="username" />
+              <input id="login-password" type="password" placeholder="Password" autocomplete="current-password" />
+              <button type="submit">Login</button>
+            </form>
+            <form id="register-form" class="tt-form">
+              <input id="register-username" type="text" placeholder="New username" autocomplete="username" />
+              <input id="register-password" type="password" placeholder="New password" autocomplete="new-password" />
+              <select id="register-role">
+                <option value="player">Player</option>
+                <option value="dm">DM</option>
+              </select>
+              <input id="register-dm-code" type="password" placeholder="DM code (only for DM)" autocomplete="off" />
+              <button type="submit">Create Account</button>
+            </form>
+          </div>
+          <button id="logout-button" type="button" class="tt-hidden">Logout</button>
+        </section>
+
+        <section class="tt-card" id="character-card">
+          <h2>Characters</h2>
+          <div id="character-list" class="tt-list"></div>
+          <form id="character-form" class="tt-form">
+            <input id="character-id" type="hidden" />
+            <input id="character-name" type="text" placeholder="Character name" />
+            <input id="character-sheet-url" type="url" placeholder="Character sheet URL" />
+            <textarea id="character-feats-text" placeholder="Optional feats (one per line)"></textarea>
+            <input id="character-token-image" type="text" placeholder="Token URL or data URI" />
+            <div class="tt-grid2">
+              <input id="character-speed" type="number" placeholder="Speed" />
+              <input id="character-max-hp" type="number" placeholder="Max HP" />
+            </div>
+            <div class="tt-grid2">
+              <input id="character-strength-mod" type="number" placeholder="Strength mod" />
+              <input id="character-isdc" type="number" placeholder="Italicized Skill DC" />
+            </div>
+            <button type="submit">Save Character</button>
+          </form>
+        </section>
+
+        <section class="tt-card tt-hidden" id="statblock-card">
+          <h2>Statblocks (DM)</h2>
+          <div id="statblock-list" class="tt-list"></div>
+          <form id="statblock-form" class="tt-form">
+            <input id="statblock-id" type="hidden" />
+            <input id="statblock-name" type="text" placeholder="Statblock name" />
+            <select id="statblock-mode">
+              <option value="column">Column Import</option>
+              <option value="sheet">Full Character Sheet</option>
+              <option value="manual">Manual Column Text</option>
+            </select>
+            <input id="statblock-sheet-url" type="url" placeholder="Sheet URL" />
+            <input id="statblock-sheet-name" type="text" placeholder="Sheet tab (default: Augmented beasts)" />
+            <input id="statblock-column-name" type="text" placeholder="Column / creature name" />
+            <textarea id="statblock-manual-text" placeholder="Manual rows, e.g. Strength: 4"></textarea>
+            <input id="statblock-token-image" type="text" placeholder="Token URL or data URI" />
+            <button type="submit">Save Statblock</button>
+          </form>
+        </section>
+
+        <section class="tt-card tt-hidden" id="map-card">
+          <h2>Battlemaps (DM)</h2>
+          <div class="tt-grid2">
+            <select id="map-select"></select>
+            <button id="map-load" type="button">Load</button>
+          </div>
+          <div class="tt-grid2">
+            <button id="map-create" type="button">Create</button>
+            <button id="map-delete" type="button">Delete</button>
+          </div>
+          <div class="tt-grid3">
+            <input id="map-create-name" type="text" placeholder="Map name" />
+            <input id="map-create-rows" type="number" min="5" max="80" placeholder="Rows" value="20" />
+            <input id="map-create-cols" type="number" min="5" max="80" placeholder="Cols" value="30" />
+          </div>
+          <select id="map-scenario-type">
+            <option value="standard">Standard</option>
+            <option value="echoing-mines">Echoing Mines Extension</option>
+          </select>
+          <label class="tt-file-label" for="map-background-input">Background Image</label>
+          <input id="map-background-input" type="file" accept="image/*" />
+
+          <div class="tt-row">
+            <label for="interaction-mode">Mode</label>
+            <select id="interaction-mode">
+              <option value="move">Move</option>
+              <option value="paint">Paint Terrain</option>
+              <option value="place">Place Tokens</option>
+            </select>
+          </div>
+
+          <div class="tt-row">
+            <label for="terrain-brush">Brush</label>
+            <select id="terrain-brush">
+              <option value="erase">Erase</option>
+              <option value="stone_wall">Stone Wall</option>
+              <option value="wooden_wall">Wooden Wall</option>
+              <option value="window">Window</option>
+              <option value="door_locked">Door (Locked)</option>
+              <option value="door_unlocked">Door (Unlocked)</option>
+              <option value="door_open">Door (Open)</option>
+              <option value="difficult_visible">Difficult Terrain (Visible)</option>
+              <option value="difficult_hidden">Difficult Terrain (Hidden)</option>
+              <option value="difficult_clear">Clear Difficult Terrain</option>
+              <option value="echoing_mine">Echoing Mine</option>
+              <option value="echoing_treasure">Echoing Treasure</option>
+              <option value="echoing_arrow_up">Echoing Arrow Up</option>
+              <option value="echoing_arrow_down">Echoing Arrow Down</option>
+              <option value="echoing_arrow_left">Echoing Arrow Left</option>
+              <option value="echoing_arrow_right">Echoing Arrow Right</option>
+              <option value="echoing_visibility_unknown">Echoing ? Visibility</option>
+              <option value="echoing_visibility_number">Echoing Number Visibility</option>
+            </select>
+          </div>
+
+          <div class="tt-row">
+            <label for="token-layer-select">Placement Layer</label>
+            <select id="token-layer-select">
+              <option value="tokens">Tokens Layer</option>
+              <option value="gm">GM Layer</option>
+            </select>
+          </div>
+
+          <div id="token-roster" class="tt-list"></div>
+          <div id="selected-token-controls" class="tt-hidden">
+            <div class="tt-grid2">
+              <button id="token-layer-to-tokens" type="button">Move to Tokens</button>
+              <button id="token-layer-to-gm" type="button">Move to GM</button>
+            </div>
+            <div class="tt-grid2">
+              <button id="token-toggle-auto" type="button">Toggle Auto-Move</button>
+              <button id="token-delete" type="button">Delete Token</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="tt-card" id="roll-card">
+          <h2>Skill Rolls</h2>
+          <form id="roll-form" class="tt-form">
+            <select id="roll-entity-select"></select>
+            <input id="roll-skill" type="text" placeholder="Skill (e.g. Stealth)" />
+            <select id="roll-type">
+              <option value="minor_skill">Minor Skill</option>
+              <option value="major_skill">Major Skill</option>
+              <option value="attack">Attack</option>
+              <option value="saving_throw">Saving Throw</option>
+              <option value="beseech_the_gods">Beseech the Gods</option>
+              <option value="prepared_prayer">Prepared Prayer</option>
+              <option value="constitution_check">Constitution Check</option>
+              <option value="resistive_willpower">Resistive Willpower</option>
+            </select>
+            <div class="tt-grid2">
+              <input id="roll-advantage" type="number" min="-5" max="5" value="0" placeholder="Adv/Dis Level" />
+              <input id="roll-flat-modifier" type="number" value="0" placeholder="Flat modifier" />
+            </div>
+            <div class="tt-grid2">
+              <input id="roll-fortune-tens" type="number" min="0" max="6" value="0" placeholder="Fortune +d20 count" />
+              <input id="roll-target-die-index" type="number" min="0" value="0" placeholder="Target die index" />
+            </div>
+            <input id="roll-portent-value" type="number" min="1" max="20" placeholder="Portent die (optional)" />
+            <div class="tt-grid2">
+              <select id="roll-shifting-mode">
+                <option value="add">Shifting Fortunes: +d6</option>
+                <option value="subtract">Shifting Fortunes: -d6</option>
+              </select>
+              <label class="tt-checkline">
+                <input id="roll-use-miracle" type="checkbox" />
+                Miracle Worker (-10, +1d20)
+              </label>
+            </div>
+            <input id="roll-bonus-override" type="number" placeholder="Bonus override (optional)" />
+            <div id="roll-modifier-list" class="tt-list"></div>
+            <details>
+              <summary>Request Ally Modifier</summary>
+              <div class="tt-grid2">
+                <select id="ally-source-user"></select>
+                <select id="ally-modifier-id"></select>
+              </div>
+              <button id="request-ally-modifier" type="button">Request Approval</button>
+              <div id="approved-modifier-list" class="tt-list"></div>
+            </details>
+            <button type="submit">Confirm Roll</button>
+          </form>
+          <div id="roll-result" class="tt-result"></div>
+        </section>
+
+        <section class="tt-card tt-hidden" id="dm-tools-card">
+          <h2>DM Tools</h2>
+          <div class="tt-grid2">
+            <select id="forage-terrain">
+              <option value="forest">Forest</option>
+              <option value="swamp">Swamp</option>
+              <option value="desert">Desert</option>
+              <option value="plains">Plains</option>
+              <option value="coastal">Coastal</option>
+              <option value="mountain">Mountain</option>
+              <option value="cave">Cave</option>
+            </select>
+            <button id="forage-roll" type="button">Forage</button>
+          </div>
+          <div class="tt-grid2">
+            <input id="group-roll-skill" type="text" placeholder="Group roll skill" />
+            <button id="group-roll-send" type="button">Ask All Players to Roll</button>
+          </div>
+          <div class="tt-grid2">
+            <button id="initiative-start" type="button">Start Initiative</button>
+            <button id="initiative-next" type="button">Next Turn</button>
+          </div>
+          <button id="initiative-stop" type="button">End Initiative</button>
+
+          <div class="tt-divider"></div>
+
+          <div class="tt-grid2">
+            <select id="injury-entity-select"></select>
+            <input id="injury-overkill" type="number" min="0" value="0" placeholder="Overkill" />
+          </div>
+          <button id="injury-roll" type="button">Roll Injury Checks</button>
+          <div id="injury-result" class="tt-result"></div>
+        </section>
+      </aside>
+
+      <main class="tt-main">
+        <header class="tt-main-header">
+          <h1>Gairos Tabletop</h1>
+          <div id="main-status">Connecting...</div>
+        </header>
+        <section class="tt-board" id="board-wrap">
+          <div id="map-grid-wrap" class="tt-grid-wrap"><div id="map-grid-cells" class="tt-grid"></div><div id="map-grid-tokens" class="tt-grid tt-grid-overlay"></div></div>
+        </section>
+      </main>
+
+      <aside class="tt-right" id="log-panel">
+        <div class="tt-log-header">
+          <h2>Session Log</h2>
+          <button id="log-toggle" type="button">Minimize</button>
+        </div>
+        <div id="log-entries" class="tt-log-entries"></div>
+        <form id="chat-form" class="tt-chat-form">
+          <input id="chat-input" type="text" placeholder="Type chat or /r NdX..." />
+          <button type="submit">Send</button>
+        </form>
+      </aside>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/tabletop.js"></script>
+  </body>
+</html>

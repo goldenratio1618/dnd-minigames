@@ -19,8 +19,16 @@ npm start
 
 - DM view: `http://<your-ip>:3000/dm.html`
 - Player view: `http://<your-ip>:3000/`
+- Tabletop (player): `http://<your-ip>:3000/tabletop.html`
+- Tabletop (DM gateway): `http://<your-ip>:3000/dm-tabletop.html`
 
 Tip: if you are in WSL, use your Windows host IP (from `ipconfig`) or your WSL IP (`hostname -I`).
+
+## Gairos Tabletop Emulator
+
+- Separate Socket.IO namespace: `/tabletop`
+- Persistent disk state in `generated/tabletop/state.json` (created automatically at runtime)
+- Player/DM accounts, character + statblock persistence, map layers, doors, difficult terrain, initiative tracking, roll logs, and slash-roll parsing (`/r NdX`, `/r NdXk1`, `/r NdXkl1 +/-Y`)
 
 ## Network safety
 

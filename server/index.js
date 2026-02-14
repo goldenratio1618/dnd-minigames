@@ -5,6 +5,7 @@ const { Server } = require("socket.io");
 const game = require("./game/arcane-cells");
 const solver = require("./game/arcane-cells-solver");
 const minesGame = require("./game/echoing-mines");
+const { createTabletopSystem } = require("./game/tabletop");
 
 const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
 const HOST = process.env.HOST || "0.0.0.0";
@@ -136,6 +137,10 @@ app.get("/dm-echoing-mines.html", (req, res) => {
   serveDmPage(req, res, "dm-echoing-mines.html");
 });
 
+app.get("/dm-tabletop.html", (req, res) => {
+  serveDmPage(req, res, "dm-tabletop.html");
+});
+
 app.post("/dm-auth", (req, res) => {
   const password = String(req.body && req.body.password ? req.body.password : "");
   if (password !== DM_PASSWORD) {
@@ -164,6 +169,11 @@ io.use((socket, next) => {
     return next();
   }
   return next(new Error("Access limited to local networks."));
+});
+
+createTabletopSystem(io, {
+  dataDirectory: path.join(__dirname, "..", "generated", "tabletop"),
+  dmPassword: DM_PASSWORD,
 });
 
 const DEFAULT_SEED = 42;
