@@ -197,6 +197,16 @@ function normalizeSnapshotTile(tile) {
       value: Number.isFinite(tile.value) ? tile.value : 0,
     };
   }
+  if (tile.type === "magic-item") {
+    return {
+      type: "magic-item",
+      uncovered,
+      itemName:
+        typeof tile.itemName === "string" && tile.itemName.trim().length > 0
+          ? tile.itemName.trim()
+          : "",
+    };
+  }
   if (tile.type === "trap") {
     return {
       type: "trap",

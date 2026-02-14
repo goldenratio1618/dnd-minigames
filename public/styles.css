@@ -27,6 +27,11 @@
   --monster-yellow: #d9c058;
   --monster-red: #e0665a;
   --monster-violet: #b38bd9;
+  --scene-top: #2f271b;
+  --scene-mid: var(--cave-mid);
+  --scene-bottom: var(--cave-void);
+  --scene-stripe: rgba(62, 51, 35, 0.45);
+  --arrow-accent: var(--accent);
 }
 
 * {
@@ -39,10 +44,58 @@ body {
   color: var(--text);
   font-family: "Cinzel", "Garamond", "Palatino Linotype", serif;
   background:
-    radial-gradient(1200px 700px at 15% 10%, #2f271b 0%, var(--cave-mid) 45%, var(--cave-void) 100%),
-    repeating-linear-gradient(120deg, rgba(62, 51, 35, 0.45) 0 2px, transparent 2px 12px);
+    radial-gradient(1200px 700px at 15% 10%, var(--scene-top) 0%, var(--scene-mid) 45%, var(--scene-bottom) 100%),
+    repeating-linear-gradient(120deg, var(--scene-stripe) 0 2px, transparent 2px 12px);
   position: relative;
   overflow-x: hidden;
+}
+
+body.mines.mines-theme-white {
+  --scene-top: #2f271b;
+  --scene-mid: var(--cave-mid);
+  --scene-bottom: var(--cave-void);
+  --scene-stripe: rgba(62, 51, 35, 0.45);
+  --accent: #e0c27c;
+  --arrow-accent: #f0dca8;
+}
+
+body.mines.mines-theme-blue {
+  --scene-top: #1b2f49;
+  --scene-mid: #101b2d;
+  --scene-bottom: #070c18;
+  --scene-stripe: rgba(65, 106, 154, 0.35);
+  --mine-floor: #172538;
+  --mine-floor-lit: #273a54;
+  --mine-fog: #0d1522;
+  --mine-fog-glow: rgba(162, 198, 246, 0.15);
+  --accent: #b7d6ff;
+  --arrow-accent: #b7d6ff;
+}
+
+body.mines.mines-theme-black {
+  --scene-top: #3a1f45;
+  --scene-mid: #1d1028;
+  --scene-bottom: #100813;
+  --scene-stripe: rgba(141, 105, 172, 0.33);
+  --mine-floor: #2a1734;
+  --mine-floor-lit: #3a2148;
+  --mine-fog: #1a0f21;
+  --mine-fog-glow: rgba(205, 156, 236, 0.14);
+  --accent: #d8b4f2;
+  --arrow-accent: #dcb3ff;
+}
+
+body.mines.mines-theme-green {
+  --scene-top: #25422f;
+  --scene-mid: #152719;
+  --scene-bottom: #0b140d;
+  --scene-stripe: rgba(94, 145, 93, 0.35);
+  --mine-floor: #182c1d;
+  --mine-floor-lit: #25452e;
+  --mine-fog: #101d13;
+  --mine-fog-glow: rgba(146, 201, 138, 0.14);
+  --accent: #b7e4a9;
+  --arrow-accent: #b8e9af;
 }
 
 body::before {
@@ -259,9 +312,22 @@ body::after {
 
 .panel-row button:disabled,
 .trap-alert button:disabled,
+.action-button:disabled,
 .reset-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.action-button {
+  background: rgba(224, 194, 124, 0.88);
+  border: none;
+  color: #1a1107;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
 }
 
 .reset-button {
@@ -752,6 +818,13 @@ body.loaded .mine-board {
   letter-spacing: 0.08em;
 }
 
+.token-escaped {
+  color: #bfe3b0;
+  font-size: 0.66rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .token-initiative {
   display: flex;
   align-items: center;
@@ -820,8 +893,14 @@ body.loaded .mine-board {
   color: var(--text);
 }
 
+.legend-chip .mana-symbol {
+  width: 16px;
+  height: 16px;
+  opacity: 0.9;
+}
+
 .chip-block {
-  color: var(--accent);
+  color: var(--arrow-accent);
 }
 
 .chip-number {
@@ -834,6 +913,10 @@ body.loaded .mine-board {
 
 .chip-treasure {
   color: var(--mine-treasure);
+}
+
+.chip-magic-item {
+  color: #b8d9ff;
 }
 
 .chip-exit {
@@ -1077,6 +1160,11 @@ body.loaded .mine-board {
   overflow-x: auto;
 }
 
+.mine-grid-wrap .map-editor {
+  margin-top: 0;
+  margin-bottom: 12px;
+}
+
 .mine-grid {
   display: grid;
   gap: 2px;
@@ -1090,6 +1178,12 @@ body.loaded .mine-board {
 
 .mine-grid.map-editing .mine-cell {
   cursor: crosshair;
+}
+
+.mine-grid.map-editing,
+.mine-grid.map-editing * {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .mine-cell {
@@ -1147,13 +1241,40 @@ body.loaded .mine-board {
   border-color: rgba(224, 194, 124, 0.35);
 }
 
+.cell-mana-button-white {
+  background: rgba(244, 240, 220, 0.9);
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+.cell-mana-button-blue {
+  background: rgba(108, 152, 222, 0.45);
+  border-color: rgba(176, 216, 255, 0.65);
+}
+
+.cell-mana-button-black {
+  background: rgba(90, 66, 108, 0.58);
+  border-color: rgba(202, 168, 235, 0.5);
+}
+
+.cell-mana-button-green {
+  background: rgba(90, 152, 94, 0.45);
+  border-color: rgba(176, 228, 167, 0.62);
+}
+
+.mine-mana-symbol {
+  width: clamp(18px, 2.7vw, 30px);
+  height: clamp(18px, 2.7vw, 30px);
+  opacity: 0.92;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.55));
+}
+
 .block-arrows {
   position: relative;
   z-index: 1;
   display: grid;
   place-items: center;
   gap: 2px;
-  color: var(--accent);
+  color: var(--arrow-accent);
 }
 
 .block-arrows[data-count="1"] {
@@ -1188,7 +1309,7 @@ body.loaded .mine-board {
 .block-arrow-multi {
   width: clamp(20px, 2.8vw, 28px);
   height: clamp(20px, 2.8vw, 28px);
-  color: var(--accent);
+  color: var(--arrow-accent);
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
   display: block;
 }
@@ -1211,6 +1332,10 @@ body.loaded .mine-board {
 
 .cell-treasure {
   color: var(--mine-treasure);
+}
+
+.cell-magic-item {
+  color: #b8d9ff;
 }
 
 .cell-exit {

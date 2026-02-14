@@ -18,6 +18,9 @@
   const monsterDelete = document.getElementById("monster-delete");
   const monsterConfigEl = document.getElementById("monster-config");
   const monsterConfigRow = document.getElementById("monster-config-row");
+  const undoActionButton = document.getElementById("undo-action");
+  const redoActionButton = document.getElementById("redo-action");
+  const headerVerseEl = document.getElementById("header-verse");
 
   const dmTrapAlert = document.getElementById("trap-alert");
   const dmTrapMessage = document.getElementById("trap-message");
@@ -53,6 +56,11 @@
   let dragMonsterFrom = null;
   let selectedMapBrush = null;
   let savedMaps = [];
+  const mapBrushDrag = {
+    active: false,
+    brushId: null,
+    paintedKeys: new Set(),
+  };
   const solverPlayback = {
     active: false,
     timer: null,
@@ -62,12 +70,46 @@
   };
 
   const DIRECTION_ORDER = ["up", "right", "down", "left"];
+  const MANA_BUTTON_TILE_TYPES = new Set([
+    "mana-button-white",
+    "mana-button-blue",
+    "mana-button-black",
+    "mana-button-green",
+  ]);
+  const MANA_BUTTON_COLORS = {
+    "mana-button-white": "white",
+    "mana-button-blue": "blue",
+    "mana-button-black": "black",
+    "mana-button-green": "green",
+  };
+  const DEFAULT_INSCRIPTION_HTML = headerVerseEl ? headerVerseEl.innerHTML : "";
   const MAP_BRUSHES = [
     { id: "erase", label: "Clear", payload: { mode: "tile", tileType: "empty" } },
     { id: "rock", label: "Rock", payload: { mode: "tile", tileType: "rock" } },
     { id: "trap", label: "Trap", payload: { mode: "tile", tileType: "trap" } },
     { id: "treasure", label: "Treasure", payload: { mode: "tile", tileType: "treasure" } },
+    { id: "magic-item", label: "Item Star", payload: { mode: "tile", tileType: "magic-item" } },
     { id: "exit", label: "Exit", payload: { mode: "tile", tileType: "exit" } },
+    {
+      id: "mana-white",
+      label: "Mana W",
+      payload: { mode: "tile", tileType: "mana-button-white" },
+    },
+    {
+      id: "mana-blue",
+      label: "Mana U",
+      payload: { mode: "tile", tileType: "mana-button-blue" },
+    },
+    {
+      id: "mana-black",
+      label: "Mana B",
+      payload: { mode: "tile", tileType: "mana-button-black" },
+    },
+    {
+      id: "mana-green",
+      label: "Mana G",
+      payload: { mode: "tile", tileType: "mana-button-green" },
+    },
     {
       id: "block-right",
       label: "Block >",
@@ -117,6 +159,7 @@
     "block-drag": "/sounds/stoneblockdragwoodgrind-82327.mp3",
     "gold-break": "/sounds/breaking-glass-83809.mp3",
     coinbag: "/sounds/freesound_community-coinbag-91016.mp3",
+    flourish: "/sounds/freesound_community-flourish-spacey-1-86845.mp3",
     "monster-howl": "/sounds/monster-howl-85304.mp3",
     "monster-roar": "/sounds/monster-warrior-roar-195877.mp3",
     "trap-explosion": "/sounds/explosion-sound-effect-425455.mp3",
@@ -132,6 +175,43 @@
   function normalizeDirections(directions) {
     const set = new Set(directions || []);
     return DIRECTION_ORDER.filter((dir) => set.has(dir));
+  }
+
+  function isManaButtonTileType(type) {
+    return MANA_BUTTON_TILE_TYPES.has(type);
+  }
+
+  function getManaButtonColor(type) {
+    return MANA_BUTTON_COLORS[type] || null;
+  }
+
+  function createManaSymbol(color) {
+    const symbol = document.createElement("span");
+    symbol.className = `mana-symbol mana-${color} mine-mana-symbol`;
+    symbol.setAttribute("aria-hidden", "true");
+    return symbol;
+  }
+
+  function applyManaTheme(theme) {
+    const normalized =
+      typeof theme === "string" &&
+      (theme === "white" || theme === "blue" || theme === "black" || theme === "green")
+        ? theme
+        : "white";
+    document.body.classList.remove(
+      "mines-theme-white",
+      "mines-theme-blue",
+      "mines-theme-black",
+      "mines-theme-green"
+    );
+    document.body.classList.add(`mines-theme-${normalized}`);
+  }
+
+  function updateInscription() {
+    if (!headerVerseEl) {
+      return;
+    }
+    headerVerseEl.innerHTML = DEFAULT_INSCRIPTION_HTML;
   }
 
   function createArrowIcon(direction) {
@@ -377,6 +457,7 @@
         button.classList.add("active");
       }
       button.addEventListener("click", () => {
+        stopMapBrushDrag();
         if (selectedMapBrush && selectedMapBrush.id === brush.id) {
           selectedMapBrush = null;
         } else {
@@ -389,9 +470,30 @@
     });
   }
 
-  function paintTileWithBrush(x, y) {
+  function isTileBrush(brush) {
+    return Boolean(
+      brush &&
+        brush.payload &&
+        brush.payload.mode === "tile"
+    );
+  }
+
+  function stopMapBrushDrag() {
+    mapBrushDrag.active = false;
+    mapBrushDrag.brushId = null;
+    mapBrushDrag.paintedKeys.clear();
+  }
+
+  function paintTileWithBrush(x, y, options = {}) {
     if (!isDM || !selectedMapBrush || solverPlayback.active) {
       return;
+    }
+    if (options.dedupe) {
+      const key = `${x},${y}`;
+      if (mapBrushDrag.paintedKeys.has(key)) {
+        return;
+      }
+      mapBrushDrag.paintedKeys.add(key);
     }
     const payload = {
       x,
@@ -411,6 +513,17 @@
         type: "block",
         uncovered,
         directions: Array.isArray(tile.directions) ? tile.directions.slice() : [],
+        baseDirections: Array.isArray(tile.baseDirections)
+          ? tile.baseDirections.slice()
+          : Array.isArray(tile.directions)
+            ? tile.directions.slice()
+            : [],
+      };
+    }
+    if (isManaButtonTileType(tile.type)) {
+      return {
+        type: tile.type,
+        uncovered,
       };
     }
     if (tile.type === "treasure") {
@@ -418,6 +531,16 @@
         type: "treasure",
         uncovered,
         value: Number.isFinite(tile.value) ? tile.value : 0,
+      };
+    }
+    if (tile.type === "magic-item") {
+      return {
+        type: "magic-item",
+        uncovered,
+        itemName:
+          typeof tile.itemName === "string" && tile.itemName.trim()
+            ? tile.itemName.trim()
+            : "",
       };
     }
     if (tile.type === "trap") {
@@ -444,6 +567,10 @@
       height: current.height,
       startArea: current.startArea,
       fogEnabled: current.fogEnabled !== false,
+      manaTheme: current.manaTheme || "white",
+      singleArrowRotation: Number.isFinite(current.singleArrowRotation)
+        ? current.singleArrowRotation
+        : 0,
       exit: current.exit,
       generationAttempts: current.generationAttempts || 1,
       solver: current.solver || null,
@@ -483,8 +610,12 @@
             type: "block",
             uncovered: tile.uncovered,
             directions: tile.directions || [],
+            baseDirections: tile.baseDirections || tile.directions || [],
             visible: true,
           };
+        }
+        if (isManaButtonTileType(tile.type)) {
+          return { type: tile.type, uncovered: tile.uncovered, visible: true };
         }
         if (tile.type === "rock") {
           return { type: "rock", uncovered: tile.uncovered, visible: true };
@@ -696,6 +827,9 @@
   }
 
   function canControlToken(token) {
+    if (token && token.escaped) {
+      return false;
+    }
     if (isDM) {
       return true;
     }
@@ -839,7 +973,20 @@
 
       const goldEl = document.createElement("div");
       goldEl.className = "token-gold";
-      goldEl.textContent = `Gold: ${token.gold}`;
+      const items = Array.isArray(token.items)
+        ? token.items.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean)
+        : [];
+      goldEl.textContent =
+        items.length > 0
+          ? `Gold: ${token.gold} + ${items.join(" + ")}`
+          : `Gold: ${token.gold}`;
+
+      let escapedEl = null;
+      if (token.escaped) {
+        escapedEl = document.createElement("div");
+        escapedEl.className = "token-escaped";
+        escapedEl.textContent = "Escaped";
+      }
 
       const initiativeWrap = document.createElement("label");
       initiativeWrap.className = "token-initiative";
@@ -863,6 +1010,9 @@
 
       card.appendChild(nameEl);
       card.appendChild(goldEl);
+      if (escapedEl) {
+        card.appendChild(escapedEl);
+      }
       card.appendChild(initiativeWrap);
       rosterEl.appendChild(card);
     });
@@ -1036,12 +1186,44 @@
     });
   }
 
+  function getHistoryState() {
+    if (!state || !state.history) {
+      return { available: false, canUndo: false, canRedo: false };
+    }
+    return {
+      available: Boolean(state.history.available),
+      canUndo: Boolean(state.history.canUndo),
+      canRedo: Boolean(state.history.canRedo),
+    };
+  }
+
+  function requestUndo() {
+    if (!state || solverPlayback.active) {
+      return;
+    }
+    socket.emit("undoAction");
+  }
+
+  function requestRedo() {
+    if (!state || solverPlayback.active) {
+      return;
+    }
+    socket.emit("redoAction");
+  }
+
   function updateActionButtons() {
     if (monsterDelete) {
       monsterDelete.disabled = !isDM || !state || !selectedMonsterId || solverPlayback.active;
     }
     if (combatExit) {
       combatExit.disabled = !isDM || !state || !state.combat || solverPlayback.active;
+    }
+    const history = getHistoryState();
+    if (undoActionButton) {
+      undoActionButton.disabled = solverPlayback.active || !history.available || !history.canUndo;
+    }
+    if (redoActionButton) {
+      redoActionButton.disabled = solverPlayback.active || !history.available || !history.canRedo;
     }
   }
 
@@ -1058,6 +1240,15 @@
     if (!gridEl || !state) {
       return;
     }
+    if (
+      mapBrushDrag.active &&
+      (!selectedMapBrush ||
+        selectedMapBrush.id !== mapBrushDrag.brushId ||
+        !isTileBrush(selectedMapBrush) ||
+        solverPlayback.active)
+    ) {
+      stopMapBrushDrag();
+    }
     gridEl.innerHTML = "";
     gridEl.classList.toggle("solver-playing", solverPlayback.active);
     gridEl.classList.toggle(
@@ -1068,6 +1259,9 @@
 
     const tokenMap = new Map();
     state.tokens.forEach((token) => {
+      if (token.escaped || !Number.isFinite(token.x) || !Number.isFinite(token.y)) {
+        return;
+      }
       const key = `${token.x},${token.y}`;
       const list = tokenMap.get(key) || [];
       list.push(token);
@@ -1132,10 +1326,17 @@
             } else {
               content = "?";
             }
+          } else if (isManaButtonTileType(tile.type)) {
+            const color = getManaButtonColor(tile.type);
+            if (color) {
+              cell.appendChild(createManaSymbol(color));
+            }
           } else if (tile.type === "trap") {
             content = "X";
           } else if (tile.type === "treasure") {
             content = "$";
+          } else if (tile.type === "magic-item") {
+            content = "★";
           } else if (tile.type === "exit") {
             content = "EXIT";
           } else if (tile.type === "unknown") {
@@ -1312,9 +1513,49 @@
           }
         });
 
+        cell.addEventListener("mousedown", (event) => {
+          if (event.button !== 0) {
+            return;
+          }
+          if (!isDM || !selectedMapBrush || solverPlayback.active) {
+            return;
+          }
+          if (!isTileBrush(selectedMapBrush)) {
+            return;
+          }
+          event.preventDefault();
+          mapBrushDrag.active = true;
+          mapBrushDrag.brushId = selectedMapBrush.id;
+          mapBrushDrag.paintedKeys.clear();
+          paintTileWithBrush(x, y, { dedupe: true });
+        });
+
+        cell.addEventListener("mouseenter", (event) => {
+          if (!mapBrushDrag.active) {
+            return;
+          }
+          if ((event.buttons & 1) === 0) {
+            stopMapBrushDrag();
+            return;
+          }
+          if (
+            !selectedMapBrush ||
+            selectedMapBrush.id !== mapBrushDrag.brushId ||
+            !isTileBrush(selectedMapBrush) ||
+            solverPlayback.active
+          ) {
+            stopMapBrushDrag();
+            return;
+          }
+          paintTileWithBrush(x, y, { dedupe: true });
+        });
+
         cell.addEventListener("click", (event) => {
           if (isDM && selectedMapBrush && !solverPlayback.active) {
             event.preventDefault();
+            if (isTileBrush(selectedMapBrush)) {
+              return;
+            }
             paintTileWithBrush(x, y);
             return;
           }
@@ -1365,6 +1606,10 @@
       selectedTokenId = null;
       return;
     }
+    if (token.escaped) {
+      selectedTokenId = null;
+      return;
+    }
     if (!canControlToken(token)) {
       return;
     }
@@ -1410,7 +1655,11 @@
       return;
     }
     const targetTile = state.tiles[target.y][target.x];
-    if (targetTile.type === "rock" || targetTile.type === "exit") {
+    if (
+      targetTile.type === "rock" ||
+      targetTile.type === "exit" ||
+      isManaButtonTileType(targetTile.type)
+    ) {
       return;
     }
     if (
@@ -1442,6 +1691,8 @@
     if (!state) {
       return;
     }
+    applyManaTheme(state.manaTheme || "white");
+    updateInscription();
     syncSelection();
     if (editingTokenId && !state.tokens.some((token) => token.id === editingTokenId)) {
       cancelTokenEdit();
@@ -1535,6 +1786,20 @@
     ) {
       return;
     }
+    const key = String(event.key || "").toLowerCase();
+    const hasMod = event.ctrlKey || event.metaKey;
+    if (hasMod && !event.altKey) {
+      if (key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        requestUndo();
+        return;
+      }
+      if (key === "y" || (key === "z" && event.shiftKey)) {
+        event.preventDefault();
+        requestRedo();
+        return;
+      }
+    }
     const keyMap = {
       ArrowUp: "up",
       ArrowDown: "down",
@@ -1547,6 +1812,14 @@
     }
     event.preventDefault();
     tryKeyboardMove(direction);
+  });
+
+  window.addEventListener("mouseup", () => {
+    stopMapBrushDrag();
+  });
+
+  window.addEventListener("blur", () => {
+    stopMapBrushDrag();
   });
 
   if (isDM && dmTrapConfirm) {
@@ -1692,7 +1965,10 @@
         if (solverPlayback.active) {
           stopSolverPlayback();
         }
-        socket.emit("loadMap", snapshot);
+        socket.emit("loadMap", {
+          source: "disk-file",
+          snapshot,
+        });
         setMessage(`Loading map from "${file.name}"...`);
       } catch (error) {
         setMessage("Could not parse map file.");
@@ -1747,6 +2023,18 @@
       selectedMonsterId = null;
       updateActionButtons();
       renderGrid();
+    });
+  }
+
+  if (undoActionButton) {
+    undoActionButton.addEventListener("click", () => {
+      requestUndo();
+    });
+  }
+
+  if (redoActionButton) {
+    redoActionButton.addEventListener("click", () => {
+      requestRedo();
     });
   }
 

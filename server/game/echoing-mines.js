@@ -69,6 +69,151 @@ const DEFAULT_MONSTER_CONFIG = {
   violet: { avatar: "/monsters/violet-beast.png", initiativeMod: 0 },
 };
 
+const DIRECTION_NAMES = DIRECTIONS.map((dir) => dir.name);
+const CLOCKWISE_ROTATION_ORDER = ["up", "right", "down", "left"];
+const VALID_ROTATION_DEGREES = new Set([0, 90, 180, 270]);
+
+const MANA_THEMES = ["white", "blue", "black", "green"];
+const MANA_THEME_TO_ROTATION = {
+  white: 0,
+  blue: 90,
+  black: 180,
+  green: 270,
+};
+const MANA_BUTTON_TILE_TYPES = {
+  white: "mana-button-white",
+  blue: "mana-button-blue",
+  black: "mana-button-black",
+  green: "mana-button-green",
+};
+const MANA_BUTTON_TYPE_TO_THEME = Object.entries(MANA_BUTTON_TILE_TYPES).reduce(
+  (acc, [theme, type]) => {
+    acc[type] = theme;
+    return acc;
+  },
+  {}
+);
+
+function normalizeBlockDirections(directions) {
+  const set = new Set(Array.isArray(directions) ? directions : []);
+  return DIRECTION_NAMES.filter((name) => set.has(name));
+}
+
+function createBlockTile(directions, options = {}) {
+  const uncovered = Boolean(options.uncovered);
+  const baseDirections = normalizeBlockDirections(
+    Array.isArray(options.baseDirections) && options.baseDirections.length > 0
+      ? options.baseDirections
+      : directions
+  );
+  const currentDirections = normalizeBlockDirections(
+    Array.isArray(directions) && directions.length > 0 ? directions : baseDirections
+  );
+  return {
+    type: "block",
+    uncovered,
+    directions: currentDirections.length > 0 ? currentDirections : baseDirections,
+    baseDirections,
+  };
+}
+
+function isManaButtonTileType(type) {
+  return typeof type === "string" && Boolean(MANA_BUTTON_TYPE_TO_THEME[type]);
+}
+
+function getManaThemeForTile(tile) {
+  if (!tile || typeof tile.type !== "string") {
+    return null;
+  }
+  return MANA_BUTTON_TYPE_TO_THEME[tile.type] || null;
+}
+
+function normalizeManaTheme(theme) {
+  return MANA_THEMES.includes(theme) ? theme : "white";
+}
+
+function normalizeRotationDegrees(degrees) {
+  const parsed = Number.parseInt(degrees, 10);
+  if (!Number.isFinite(parsed)) {
+    return 0;
+  }
+  const normalized = ((parsed % 360) + 360) % 360;
+  if (VALID_ROTATION_DEGREES.has(normalized)) {
+    return normalized;
+  }
+  return 0;
+}
+
+function rotationStepsFromDegrees(degrees) {
+  return normalizeRotationDegrees(degrees) / 90;
+}
+
+function rotateDirectionClockwise(direction, steps) {
+  const index = CLOCKWISE_ROTATION_ORDER.indexOf(direction);
+  if (index === -1) {
+    return direction;
+  }
+  const normalizedSteps = ((steps % 4) + 4) % 4;
+  return CLOCKWISE_ROTATION_ORDER[(index + normalizedSteps) % 4];
+}
+
+function applySingleDirectionRotation(state, degrees) {
+  const normalizedDegrees = normalizeRotationDegrees(degrees);
+  const steps = rotationStepsFromDegrees(normalizedDegrees);
+  state.singleArrowRotation = normalizedDegrees;
+  state.tiles.forEach((row) => {
+    row.forEach((tile) => {
+      if (!tile || tile.type !== "block") {
+        return;
+      }
+      const baseDirections = normalizeBlockDirections(
+        Array.isArray(tile.baseDirections) && tile.baseDirections.length > 0
+          ? tile.baseDirections
+          : tile.directions
+      );
+      tile.baseDirections = baseDirections;
+      if (baseDirections.length === 1) {
+        tile.directions = [rotateDirectionClockwise(baseDirections[0], steps)];
+      } else {
+        tile.directions = baseDirections.slice();
+      }
+    });
+  });
+}
+
+function applyManaThemeState(state, theme) {
+  const previousTheme = normalizeManaTheme(state.manaTheme);
+  const previousRotation = normalizeRotationDegrees(state.singleArrowRotation);
+  const nextTheme = normalizeManaTheme(theme);
+  const nextRotation = MANA_THEME_TO_ROTATION[nextTheme];
+  state.manaTheme = nextTheme;
+  applySingleDirectionRotation(state, nextRotation);
+  return {
+    theme: nextTheme,
+    changed: previousTheme !== nextTheme || previousRotation !== nextRotation,
+  };
+}
+
+function createManaButtonTile(theme, options = {}) {
+  const uncovered = Boolean(options.uncovered);
+  const normalizedTheme = normalizeManaTheme(theme);
+  return {
+    type: MANA_BUTTON_TILE_TYPES[normalizedTheme],
+    uncovered,
+  };
+}
+
+function mapHasManaButtons(tiles) {
+  for (let y = 0; y < tiles.length; y += 1) {
+    for (let x = 0; x < tiles[y].length; x += 1) {
+      if (isManaButtonTileType(tiles[y][x].type)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function normalizeMonsterConfig(config) {
   const normalized = {};
   MONSTER_TYPES.forEach((type) => {
@@ -79,6 +224,16 @@ function normalizeMonsterConfig(config) {
     };
   });
   return normalized;
+}
+
+function normalizeTokenItems(items) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return items
+    .map((item) => (typeof item === "string" ? item.trim() : ""))
+    .filter((item) => item.length > 0)
+    .slice(0, 12);
 }
 
 function createRng(seed) {
@@ -597,13 +752,9 @@ function generateBaseLayout({ level, seed, width, height }) {
         directions = ["up", "down"];
       }
     }
-    directions = [...new Set(directions)];
+    directions = normalizeBlockDirections(directions);
 
-    tiles[pos.y][pos.x] = {
-      type: "block",
-      uncovered: false,
-      directions,
-    };
+    tiles[pos.y][pos.x] = createBlockTile(directions, { uncovered: false });
     blocks.push({ x: pos.x, y: pos.y });
   }
 
@@ -870,11 +1021,7 @@ function carveCell(tiles, x, y, pathSet) {
 }
 
 function placeBlock(tiles, x, y, directions, pathSet) {
-  tiles[y][x] = {
-    type: "block",
-    uncovered: false,
-    directions: Array.isArray(directions) ? directions.slice() : [],
-  };
+  tiles[y][x] = createBlockTile(directions, { uncovered: false });
   if (pathSet) {
     pathSet.add(coordKey(x, y));
   }
@@ -1596,11 +1743,13 @@ function createTokens({ tokens, tokenCount, startArea }) {
         name: token.name || "",
         ownerId: token.ownerId || null,
         gold: Number.isFinite(token.gold) ? token.gold : 0,
+        items: normalizeTokenItems(token.items),
         avatar: token.avatar || "",
         initiativeMod: Number.isFinite(token.initiativeMod) ? token.initiativeMod : 0,
         x: pos.x,
         y: pos.y,
         lastMoveAt: 0,
+        escaped: false,
       };
     });
   }
@@ -1610,11 +1759,13 @@ function createTokens({ tokens, tokenCount, startArea }) {
     name: "",
     ownerId: null,
     gold: 0,
+    items: [],
     avatar: "",
     initiativeMod: 0,
     x: pos.x,
     y: pos.y,
     lastMoveAt: 0,
+    escaped: false,
   }));
 }
 
@@ -1663,6 +1814,8 @@ function createGame({
     generationAttempts: generated.generationAttempts || 1,
     combat: null,
     pendingTrap: null,
+    manaTheme: "white",
+    singleArrowRotation: 0,
   };
 }
 
@@ -1745,13 +1898,16 @@ function loadSnapshot(state, snapshot) {
       }
       const uncovered = Boolean(source.uncovered);
       if (source.type === "block") {
-        tiles[y][x] = {
-          type: "block",
+        const directions = Array.isArray(source.directions)
+          ? source.directions.filter((dir) => validDirections.has(dir))
+          : [];
+        const baseDirections = Array.isArray(source.baseDirections)
+          ? source.baseDirections.filter((dir) => validDirections.has(dir))
+          : directions;
+        tiles[y][x] = createBlockTile(directions, {
           uncovered,
-          directions: Array.isArray(source.directions)
-            ? source.directions.filter((dir) => validDirections.has(dir))
-            : [],
-        };
+          baseDirections,
+        });
       } else if (source.type === "trap") {
         tiles[y][x] = {
           type: "trap",
@@ -1764,12 +1920,24 @@ function loadSnapshot(state, snapshot) {
           uncovered,
           value: Number.isFinite(source.value) ? source.value : 0,
         };
+      } else if (source.type === "magic-item") {
+        tiles[y][x] = {
+          type: "magic-item",
+          uncovered,
+          itemName:
+            typeof source.itemName === "string" && source.itemName.trim().length > 0
+              ? source.itemName.trim()
+              : "",
+        };
       } else if (source.type === "exit") {
         tiles[y][x] = { type: "exit", uncovered };
       } else if (source.type === "empty") {
         tiles[y][x] = { type: "empty", uncovered };
       } else if (source.type === "rock") {
         tiles[y][x] = { type: "rock", uncovered };
+      } else if (isManaButtonTileType(source.type)) {
+        const theme = MANA_BUTTON_TYPE_TO_THEME[source.type] || "white";
+        tiles[y][x] = createManaButtonTile(theme, { uncovered });
       }
     }
   }
@@ -1805,7 +1973,15 @@ function loadSnapshot(state, snapshot) {
 
   const solver = normalizeSolverSnapshot(snapshot.solver);
 
-  return {
+  const manaTheme = normalizeManaTheme(snapshot.manaTheme);
+  const singleArrowRotation = Object.prototype.hasOwnProperty.call(
+    snapshot,
+    "singleArrowRotation"
+  )
+    ? normalizeRotationDegrees(snapshot.singleArrowRotation)
+    : MANA_THEME_TO_ROTATION[manaTheme];
+
+  const loadedState = {
     gameId: GAME_ID,
     name: GAME_NAME,
     level: Number.isFinite(Number.parseInt(snapshot.level, 10))
@@ -1832,7 +2008,11 @@ function loadSnapshot(state, snapshot) {
       : 1,
     combat: null,
     pendingTrap: null,
+    manaTheme,
+    singleArrowRotation,
   };
+  applySingleDirectionRotation(loadedState, singleArrowRotation);
+  return loadedState;
 }
 
 function computeVisibility(tiles, width, height) {
@@ -1913,14 +2093,18 @@ function pruneCombat(state) {
     return;
   }
   const aliveMonsters = new Set(state.monsters.map((monster) => monster.id));
+  const activePlayers = new Set(getActiveTokens(state).map((token) => token.id));
   state.combat.order = state.combat.order.filter(
-    (entry) => entry.type !== "monster" || aliveMonsters.has(entry.id)
+    (entry) =>
+      (entry.type !== "monster" || aliveMonsters.has(entry.id)) &&
+      (entry.type !== "player" || activePlayers.has(entry.id))
   );
   if (state.combat.currentIndex >= state.combat.order.length) {
     state.combat.currentIndex = Math.max(0, state.combat.order.length - 1);
   }
   syncOtherMonstersEntry(state, state.combat);
-  if (state.monsters.length === 0) {
+  const hasPlayers = state.combat.order.some((entry) => entry.type === "player");
+  if (state.monsters.length === 0 || !hasPlayers) {
     state.combat = null;
   }
 }
@@ -1947,7 +2131,11 @@ function removeCombatEntry(state, entryId) {
 
 function buildCombatEntries(state, monster) {
   const monsterConfig = normalizeMonsterConfig(state.monsterConfig);
-  const entries = state.tokens.map((token) => {
+  const activeTokens = getActiveTokens(state);
+  if (activeTokens.length === 0) {
+    return [];
+  }
+  const entries = activeTokens.map((token) => {
     const mod = Number.isFinite(token.initiativeMod) ? token.initiativeMod : 0;
     return {
       id: token.id,
@@ -1974,6 +2162,9 @@ function startCombat(state, monster) {
     return false;
   }
   const order = buildCombatEntries(state, monster);
+  if (order.length === 0) {
+    return false;
+  }
   const combat = {
     active: true,
     order,
@@ -2052,9 +2243,18 @@ function serializeTile(tile, count, role, visible, uncovered, fogEnabled, forceU
   }
   if (tile.type === "block") {
     payload.directions = tile.directions || [];
+    payload.baseDirections = tile.baseDirections || tile.directions || [];
   }
   if (tile.type === "treasure") {
     payload.value = role === "dm" ? tile.value : null;
+  }
+  if (tile.type === "magic-item") {
+    if (role === "player") {
+      payload.type = "treasure";
+      payload.value = null;
+    } else {
+      payload.itemName = tile.itemName || "";
+    }
   }
   if (tile.type === "trap" && role === "dm") {
     payload.message = tile.message || "";
@@ -2083,10 +2283,12 @@ function serializeState(state, { role, socketId }) {
     id: token.id,
     name: token.name,
     gold: token.gold,
+    items: normalizeTokenItems(token.items),
     avatar: token.avatar,
     initiativeMod: token.initiativeMod,
-    x: token.x,
-    y: token.y,
+    x: token.escaped ? null : token.x,
+    y: token.escaped ? null : token.y,
+    escaped: Boolean(token.escaped),
     owned: Boolean(token.ownerId),
     ownedBySelf: token.ownerId === socketId,
   }));
@@ -2135,7 +2337,9 @@ function serializeState(state, { role, socketId }) {
       const forceUnknown = Boolean(trapDangerMask && trapDangerMask[y] && trapDangerMask[y][x]) &&
         !uncovered &&
         tile.type !== "block" &&
-        tile.type !== "rock";
+        tile.type !== "rock" &&
+        tile.type !== "magic-item" &&
+        !isManaButtonTileType(tile.type);
       return serializeTile(tile, counts[y][x], role, visible, uncovered, fogEnabled, forceUnknown);
     })
   );
@@ -2145,6 +2349,9 @@ function serializeState(state, { role, socketId }) {
     gameName: state.name,
     level: state.level,
     seed: state.seed,
+    manaTheme: normalizeManaTheme(state.manaTheme),
+    singleArrowRotation: normalizeRotationDegrees(state.singleArrowRotation),
+    hasManaButtons: mapHasManaButtons(state.tiles),
     width: state.width,
     height: state.height,
     startArea: state.startArea,
@@ -2189,7 +2396,15 @@ function serializeState(state, { role, socketId }) {
 }
 
 function findTokenAt(state, x, y) {
-  return state.tokens.find((token) => token.x === x && token.y === y) || null;
+  return (
+    state.tokens.find(
+      (token) => !token.escaped && token.x === x && token.y === y
+    ) || null
+  );
+}
+
+function getActiveTokens(state) {
+  return state.tokens.filter((token) => !token.escaped);
 }
 
 function findMonsterAt(state, x, y) {
@@ -2197,7 +2412,7 @@ function findMonsterAt(state, x, y) {
 }
 
 function canMonsterMoveInto(tile) {
-  return tile.type === "empty" || tile.type === "treasure";
+  return tile.type === "empty" || tile.type === "treasure" || tile.type === "magic-item";
 }
 
 function findPushDestination(state, player, dir) {
@@ -2258,7 +2473,12 @@ function tryPushBlock(state, blockPos, dir, options = {}) {
     if (!tile.directions || !tile.directions.includes(dir.name)) {
       return { ok: false, error: "That block will not move that way." };
     }
-    blocks.push({ x: cursor.x, y: cursor.y, directions: tile.directions });
+    blocks.push({
+      x: cursor.x,
+      y: cursor.y,
+      directions: tile.directions,
+      baseDirections: tile.baseDirections || tile.directions,
+    });
     const next = { x: cursor.x + dir.dx, y: cursor.y + dir.dy };
     if (!inBounds(next.x, next.y, state.width, state.height)) {
       return { ok: false, error: "That block cannot move there." };
@@ -2275,7 +2495,8 @@ function tryPushBlock(state, blockPos, dir, options = {}) {
     startTile.type === "rock" ||
     startTile.type === "exit" ||
     startTile.type === "trap" ||
-    startTile.type === "block"
+    startTile.type === "block" ||
+    isManaButtonTileType(startTile.type)
   ) {
     return { ok: false, error: "That block cannot move there." };
   }
@@ -2323,7 +2544,8 @@ function tryPushBlock(state, blockPos, dir, options = {}) {
         tile.type === "rock" ||
         tile.type === "exit" ||
         tile.type === "trap" ||
-        tile.type === "block"
+        tile.type === "block" ||
+        isManaButtonTileType(tile.type)
       ) {
         break;
       }
@@ -2344,7 +2566,7 @@ function tryPushBlock(state, blockPos, dir, options = {}) {
 
   if (emptyIndex === -1) {
     for (let i = line.length - 1; i >= 0; i -= 1) {
-      if (line[i].tile.type === "treasure") {
+      if (line[i].tile.type === "treasure" || line[i].tile.type === "magic-item") {
         destroyIndex = i;
         destroyTreasure = true;
         if (line[i].monster) {
@@ -2396,7 +2618,11 @@ function tryPushBlock(state, blockPos, dir, options = {}) {
   if (line.length > 0) {
     const occupants = line.map((entry) => ({
       treasure:
-        entry.tile.type === "treasure" ? { value: entry.tile.value } : null,
+        entry.tile.type === "treasure"
+          ? { type: "treasure", value: entry.tile.value }
+          : entry.tile.type === "magic-item"
+            ? { type: "magic-item", itemName: entry.tile.itemName || "" }
+            : null,
       monster: entry.monster || null,
     }));
 
@@ -2414,11 +2640,19 @@ function tryPushBlock(state, blockPos, dir, options = {}) {
       const dest = line[i];
       const destUncovered = lineUncovered[i];
       if (source.treasure) {
-        state.tiles[dest.y][dest.x] = {
-          type: "treasure",
-          uncovered: destUncovered,
-          value: source.treasure.value,
-        };
+        if (source.treasure.type === "magic-item") {
+          state.tiles[dest.y][dest.x] = {
+            type: "magic-item",
+            uncovered: destUncovered,
+            itemName: source.treasure.itemName || "",
+          };
+        } else {
+          state.tiles[dest.y][dest.x] = {
+            type: "treasure",
+            uncovered: destUncovered,
+            value: source.treasure.value,
+          };
+        }
       } else {
         state.tiles[dest.y][dest.x] = {
           type: "empty",
@@ -2442,11 +2676,10 @@ function tryPushBlock(state, blockPos, dir, options = {}) {
     const block = blocks[i];
     const destX = block.x + dir.dx;
     const destY = block.y + dir.dy;
-    state.tiles[destY][destX] = {
-      type: "block",
+    state.tiles[destY][destX] = createBlockTile(block.directions, {
       uncovered: blockDestUncovered[i],
-      directions: block.directions,
-    };
+      baseDirections: block.baseDirections,
+    });
   }
   state.tiles[blocks[0].y][blocks[0].x] = createEmptyTile();
   state.tiles[blocks[0].y][blocks[0].x].uncovered = true;
@@ -2463,6 +2696,9 @@ function applyMove(state, move, context) {
   const token = state.tokens.find((entry) => entry.id === move.tokenId);
   if (!token) {
     return { ok: false, error: "That token is missing." };
+  }
+  if (token.escaped) {
+    return { ok: false, error: "That token has already reached the exit." };
   }
   if (
     context.role !== "dm" &&
@@ -2486,6 +2722,7 @@ function applyMove(state, move, context) {
   }
   const now = context.now || Date.now();
   const sounds = [];
+  let stateAlteringAction = false;
 
   if (findTokenAt(state, target.x, target.y)) {
     return { ok: false, error: "That space is already occupied." };
@@ -2513,6 +2750,7 @@ function applyMove(state, move, context) {
       return { ok: false, error: pushed.error || "That block will not move." };
     }
     if (pushed.effects && pushed.effects.blockMoved) {
+      stateAlteringAction = true;
       sounds.push("block-drag");
       if (pushed.effects.destroyedTreasure) {
         sounds.push("gold-break");
@@ -2522,6 +2760,21 @@ function applyMove(state, move, context) {
       }
     }
     tile = state.tiles[target.y][target.x];
+  }
+
+  const pressedTheme = getManaThemeForTile(tile);
+  if (pressedTheme) {
+    token.lastMoveAt = now;
+    tile.uncovered = true;
+    const appliedTheme = applyManaThemeState(state, pressedTheme);
+    sounds.push("flourish");
+    return {
+      ok: true,
+      announcement: `${token.name || "A hero"} presses the ${appliedTheme.theme} sigil.`,
+      sounds,
+      pressedManaTheme: appliedTheme.theme,
+      isStateAlteringAction: appliedTheme.changed,
+    };
   }
 
   if (tile.type === "trap") {
@@ -2538,6 +2791,31 @@ function applyMove(state, move, context) {
       trapTriggered: true,
       announcement: state.pendingTrap.message,
       sounds: ["trap-explosion"],
+      isStateAlteringAction: true,
+    };
+  }
+
+  if (tile.type === "magic-item") {
+    token.x = target.x;
+    token.y = target.y;
+    token.lastMoveAt = now;
+    tile.uncovered = true;
+    if (!Array.isArray(token.items)) {
+      token.items = [];
+    }
+    const itemName =
+      typeof tile.itemName === "string" && tile.itemName.trim().length > 0
+        ? tile.itemName.trim()
+        : `Item ${token.items.length + 1}`;
+    token.items = normalizeTokenItems(token.items.concat(itemName));
+    state.tiles[target.y][target.x] = createEmptyTile();
+    state.tiles[target.y][target.x].uncovered = true;
+    sounds.push("coinbag");
+    return {
+      ok: true,
+      announcement: `${token.name || "A hero"} finds ${itemName}.`,
+      sounds,
+      isStateAlteringAction: false,
     };
   }
 
@@ -2555,6 +2833,7 @@ function applyMove(state, move, context) {
       ok: true,
       announcement: `${token.name || "A hero"} gains ${gain} gold.`,
       sounds,
+      isStateAlteringAction: false,
     };
   }
 
@@ -2562,14 +2841,25 @@ function applyMove(state, move, context) {
     token.x = target.x;
     token.y = target.y;
     token.lastMoveAt = now;
-    return { ok: true, reachedExit: true, sounds };
+    token.escaped = true;
+    removeCombatEntry(state, token.id);
+    const allEscaped =
+      state.tokens.length > 0 && state.tokens.every((entry) => Boolean(entry.escaped));
+    return {
+      ok: true,
+      reachedExit: true,
+      allEscaped,
+      announcement: `${token.name || "A hero"} reaches the exit.`,
+      sounds,
+      isStateAlteringAction: true,
+    };
   }
 
   token.x = target.x;
   token.y = target.y;
   token.lastMoveAt = now;
   tile.uncovered = true;
-  return { ok: true, sounds };
+  return { ok: true, sounds, isStateAlteringAction: stateAlteringAction };
 }
 
 function setTokenName(state, tokenId, name, socketId, role) {
@@ -2637,7 +2927,7 @@ function applyMonsterMove(state, move, context) {
 
   const dir = DIRECTIONS.find((step) => step.dx === dx && step.dy === dy);
   let tile = state.tiles[target.y][target.x];
-  if (tile.type === "rock" || tile.type === "exit") {
+  if (tile.type === "rock" || tile.type === "exit" || isManaButtonTileType(tile.type)) {
     return { ok: false, error: "That move is not possible." };
   }
 
@@ -2722,7 +3012,7 @@ function findFallbackExit(state, avoidX, avoidY) {
         continue;
       }
       const tile = state.tiles[y][x];
-      if (tile.type === "empty" || tile.type === "treasure") {
+      if (tile.type === "empty" || tile.type === "treasure" || tile.type === "magic-item") {
         return { x, y };
       }
     }
@@ -2736,6 +3026,28 @@ function setFogOfWar(state, enabled, role) {
   }
   state.fogEnabled = enabled !== false;
   return { ok: true };
+}
+
+function nextMagicItemName(state) {
+  let maxIndex = 0;
+  for (let y = 0; y < state.height; y += 1) {
+    for (let x = 0; x < state.width; x += 1) {
+      const tile = state.tiles[y][x];
+      if (!tile || tile.type !== "magic-item") {
+        continue;
+      }
+      const match =
+        typeof tile.itemName === "string" ? tile.itemName.match(/item\s+(\d+)/i) : null;
+      if (!match) {
+        continue;
+      }
+      const value = Number.parseInt(match[1], 10);
+      if (Number.isFinite(value) && value > maxIndex) {
+        maxIndex = value;
+      }
+    }
+  }
+  return `Item ${maxIndex + 1}`;
 }
 
 function editMapTile(state, payload, role) {
@@ -2789,7 +3101,19 @@ function editMapTile(state, payload, role) {
   }
 
   const tileType = payload && payload.tileType;
-  const validTileTypes = new Set(["rock", "empty", "block", "trap", "treasure", "exit"]);
+  const validTileTypes = new Set([
+    "rock",
+    "empty",
+    "block",
+    "trap",
+    "treasure",
+    "magic-item",
+    "exit",
+    MANA_BUTTON_TILE_TYPES.white,
+    MANA_BUTTON_TILE_TYPES.blue,
+    MANA_BUTTON_TILE_TYPES.black,
+    MANA_BUTTON_TILE_TYPES.green,
+  ]);
   if (!validTileTypes.has(tileType)) {
     return { ok: false, error: "Unknown tile type." };
   }
@@ -2811,17 +3135,30 @@ function editMapTile(state, payload, role) {
 
   if (tileType === "block") {
     const validDirections = new Set(DIRECTIONS.map((dir) => dir.name));
-    const directions = Array.isArray(payload && payload.directions)
+    const baseDirections = Array.isArray(payload && payload.directions)
       ? payload.directions.filter((dir) => validDirections.has(dir))
       : [];
-    if (directions.length === 0) {
+    if (baseDirections.length === 0) {
       return { ok: false, error: "Blocks need at least one valid push direction." };
     }
-    state.tiles[y][x] = {
-      type: "block",
+    const normalizedBase = normalizeBlockDirections(baseDirections);
+    const steps = rotationStepsFromDegrees(state.singleArrowRotation);
+    const rotatedDirections =
+      normalizedBase.length === 1
+        ? [rotateDirectionClockwise(normalizedBase[0], steps)]
+        : normalizedBase;
+    state.tiles[y][x] = createBlockTile(rotatedDirections, {
       uncovered: false,
-      directions: [...new Set(directions)],
-    };
+      baseDirections: normalizedBase,
+    });
+    removeMonsterAt(state, x, y);
+    state.solver = null;
+    return { ok: true };
+  }
+
+  if (isManaButtonTileType(tileType)) {
+    const theme = MANA_BUTTON_TYPE_TO_THEME[tileType];
+    state.tiles[y][x] = createManaButtonTile(theme, { uncovered: false });
     removeMonsterAt(state, x, y);
     state.solver = null;
     return { ok: true };
@@ -2843,6 +3180,16 @@ function editMapTile(state, payload, role) {
       type: "treasure",
       uncovered: false,
       value: 10,
+    };
+    state.solver = null;
+    return { ok: true };
+  }
+
+  if (tileType === "magic-item") {
+    state.tiles[y][x] = {
+      type: "magic-item",
+      uncovered: false,
+      itemName: nextMagicItemName(state),
     };
     state.solver = null;
     return { ok: true };
@@ -3039,6 +3386,7 @@ function advanceLevel(state) {
     name: token.name,
     ownerId: token.ownerId,
     gold: token.gold,
+    items: normalizeTokenItems(token.items),
     avatar: token.avatar,
     initiativeMod: token.initiativeMod,
   }));
@@ -3058,6 +3406,7 @@ function resetLevel(state) {
     name: token.name,
     ownerId: token.ownerId,
     gold: token.gold,
+    items: normalizeTokenItems(token.items),
     avatar: token.avatar,
     initiativeMod: token.initiativeMod,
   }));
@@ -3211,10 +3560,14 @@ function computeVioletSpeed(distance) {
 function computeMonsterMove(state, monster, timestamp) {
   let speed = MONSTER_SPEED_TPS;
   let move = null;
+  const activeTokens = getActiveTokens(state);
+  if (activeTokens.length === 0) {
+    return { move: null, speed };
+  }
   if (monster.type === "violet") {
     const path = findShortestPath(
       { x: monster.x, y: monster.y },
-      state.tokens.map((token) => ({ x: token.x, y: token.y })),
+      activeTokens.map((token) => ({ x: token.x, y: token.y })),
       state
     );
     if (!path || path.length < 2) {
@@ -3228,9 +3581,9 @@ function computeMonsterMove(state, monster, timestamp) {
     );
     move = { x: next.x, y: next.y, dir };
   } else if (monster.type === "red") {
-    let nearest = state.tokens[0];
+    let nearest = activeTokens[0];
     let bestDistance = nearest ? manhattan(monster, nearest) : Infinity;
-    state.tokens.forEach((token) => {
+    activeTokens.forEach((token) => {
       const dist = manhattan(monster, token);
       if (dist < bestDistance) {
         bestDistance = dist;

@@ -534,16 +534,95 @@ io.on("connection", (socket) => {
 
 const minesNamespace = io.of("/echoing-mines");
 const MINES_DEFAULT_LEVEL = 1;
+const MINES_HISTORY_LIMIT = 500;
+const MINES_HISTORY_MONSTER_ERROR = "Undo/Redo is disabled while monsters are on the map.";
 let minesState = minesGame.createGame({
   level: MINES_DEFAULT_LEVEL,
   seed: DEFAULT_SEED,
 });
+let minesDiskLoadedSnapshot = null;
+const minesHistory = {
+  undo: [],
+  redo: [],
+};
+
+function minesHasMonsters() {
+  return Array.isArray(minesState.monsters) && minesState.monsters.length > 0;
+}
+
+function clearMinesHistory() {
+  minesHistory.undo = [];
+  minesHistory.redo = [];
+}
+
+function enforceMinesHistoryAvailability() {
+  if (minesHasMonsters()) {
+    clearMinesHistory();
+  }
+}
+
+function getMinesHistoryState() {
+  const available = !minesHasMonsters();
+  return {
+    available,
+    canUndo: available && minesHistory.undo.length > 0,
+    canRedo: available && minesHistory.redo.length > 0,
+  };
+}
+
+function pushMinesUndoState(snapshot) {
+  if (minesHasMonsters()) {
+    clearMinesHistory();
+    return false;
+  }
+  minesHistory.undo.push(snapshot);
+  if (minesHistory.undo.length > MINES_HISTORY_LIMIT) {
+    minesHistory.undo.shift();
+  }
+  minesHistory.redo = [];
+  return true;
+}
+
+function applyMinesUndo() {
+  if (minesHasMonsters()) {
+    return { ok: false, error: MINES_HISTORY_MONSTER_ERROR };
+  }
+  if (minesHistory.undo.length === 0) {
+    return { ok: false, error: "Nothing to undo." };
+  }
+  minesHistory.redo.push(cloneState(minesState));
+  if (minesHistory.redo.length > MINES_HISTORY_LIMIT) {
+    minesHistory.redo.shift();
+  }
+  minesState = minesHistory.undo.pop();
+  enforceMinesHistoryAvailability();
+  return { ok: true };
+}
+
+function applyMinesRedo() {
+  if (minesHasMonsters()) {
+    return { ok: false, error: MINES_HISTORY_MONSTER_ERROR };
+  }
+  if (minesHistory.redo.length === 0) {
+    return { ok: false, error: "Nothing to redo." };
+  }
+  minesHistory.undo.push(cloneState(minesState));
+  if (minesHistory.undo.length > MINES_HISTORY_LIMIT) {
+    minesHistory.undo.shift();
+  }
+  minesState = minesHistory.redo.pop();
+  enforceMinesHistoryAvailability();
+  return { ok: true };
+}
 
 function serializeMinesState(socket) {
-  return minesGame.serializeState(minesState, {
+  enforceMinesHistoryAvailability();
+  const payload = minesGame.serializeState(minesState, {
     role: socket.data.role || "player",
     socketId: socket.id,
   });
+  payload.history = getMinesHistoryState();
+  return payload;
 }
 
 function sendMinesState(socket) {
@@ -578,6 +657,25 @@ function notifyMinesTrap(message) {
   }
 }
 
+function parseMinesLoadRequest(payload) {
+  if (payload && payload.snapshot && Array.isArray(payload.snapshot.tiles)) {
+    return {
+      snapshot: payload.snapshot,
+      source: payload.source,
+    };
+  }
+  if (payload && Array.isArray(payload.tiles)) {
+    return {
+      snapshot: payload,
+      source: null,
+    };
+  }
+  return {
+    snapshot: null,
+    source: null,
+  };
+}
+
 minesNamespace.on("connection", (socket) => {
   socket.data.role = "player";
   sendMinesState(socket);
@@ -602,6 +700,7 @@ minesNamespace.on("connection", (socket) => {
       name: token.name,
       ownerId: token.ownerId,
       gold: 0,
+      items: [],
       avatar: token.avatar,
       initiativeMod: token.initiativeMod,
     }));
@@ -613,6 +712,9 @@ minesNamespace.on("connection", (socket) => {
       monsterConfig: minesState.monsterConfig,
       fogEnabled: minesState.fogEnabled !== false,
     });
+    minesDiskLoadedSnapshot = null;
+    clearMinesHistory();
+    enforceMinesHistoryAvailability();
     broadcastMinesState();
   });
 
@@ -620,7 +722,22 @@ minesNamespace.on("connection", (socket) => {
     if (socket.data.role !== "dm") {
       return;
     }
-    minesState = minesGame.resetLevel(minesState);
+    if (minesDiskLoadedSnapshot) {
+      const reloaded = minesGame.loadSnapshot(
+        minesState,
+        cloneState(minesDiskLoadedSnapshot)
+      );
+      if (reloaded) {
+        minesState = reloaded;
+      } else {
+        minesDiskLoadedSnapshot = null;
+        minesState = minesGame.resetLevel(minesState);
+      }
+    } else {
+      minesState = minesGame.resetLevel(minesState);
+    }
+    clearMinesHistory();
+    enforceMinesHistoryAvailability();
     broadcastMinesState();
   });
 
@@ -628,16 +745,22 @@ minesNamespace.on("connection", (socket) => {
     if (socket.data.role !== "dm") {
       return;
     }
-    const loaded = minesGame.loadSnapshot(minesState, payload);
+    const request = parseMinesLoadRequest(payload);
+    const loaded = minesGame.loadSnapshot(minesState, request.snapshot);
     if (!loaded) {
       socket.emit("actionError", { message: "Could not load that map." });
       return;
     }
     minesState = loaded;
+    minesDiskLoadedSnapshot =
+      request.source === "disk-file" ? cloneState(request.snapshot) : null;
+    clearMinesHistory();
+    enforceMinesHistoryAvailability();
     broadcastMinesState();
   });
 
   socket.on("moveToken", (payload) => {
+    const beforeMove = cloneState(minesState);
     const result = minesGame.applyMove(minesState, payload, {
       role: socket.data.role || "player",
       socketId: socket.id,
@@ -651,6 +774,9 @@ minesNamespace.on("connection", (socket) => {
       }
       return;
     }
+    if (result.isStateAlteringAction) {
+      pushMinesUndoState(beforeMove);
+    }
     if (result.trapTriggered) {
       notifyMinesTrap(result.announcement || "A trap was triggered.");
     }
@@ -660,8 +786,10 @@ minesNamespace.on("connection", (socket) => {
     if (result.sounds && result.sounds.length > 0) {
       result.sounds.forEach((id) => broadcastMinesSound(id));
     }
-    if (result.reachedExit) {
+    if (result.reachedExit && result.allEscaped) {
       minesState = minesGame.advanceLevel(minesState);
+      minesDiskLoadedSnapshot = null;
+      enforceMinesHistoryAvailability();
       broadcastMinesAnnouncement(`Exit reached. Descending to level ${minesState.level}.`);
     }
     broadcastMinesState();
@@ -772,6 +900,8 @@ minesNamespace.on("connection", (socket) => {
       socket.emit("actionError", { message: result.error });
       return;
     }
+    clearMinesHistory();
+    enforceMinesHistoryAvailability();
     broadcastMinesState();
   });
 
@@ -874,6 +1004,24 @@ minesNamespace.on("connection", (socket) => {
       return;
     }
     minesState.pendingTrap = null;
+    broadcastMinesState();
+  });
+
+  socket.on("undoAction", () => {
+    const result = applyMinesUndo();
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastMinesState();
+  });
+
+  socket.on("redoAction", () => {
+    const result = applyMinesRedo();
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
     broadcastMinesState();
   });
 
