@@ -2261,6 +2261,8 @@ function serializeTile(tile, count, role, visible, uncovered, fogEnabled, forceU
   }
   if (tile.type === "empty" && (uncovered || role === "dm" || !fogEnabled)) {
     payload.number = count;
+  } else if (tile.type === "empty" && role === "player") {
+    payload.hasNumber = count > 0;
   }
   if (tile.type === "exit") {
     payload.exit = true;
@@ -2717,9 +2719,14 @@ function applyMove(state, move, context) {
   }
   const dx = target.x - token.x;
   const dy = target.y - token.y;
-  if (Math.abs(dx) + Math.abs(dy) !== 1) {
+  const distance = Math.abs(dx) + Math.abs(dy);
+  if (distance === 0) {
+    return { ok: false, error: "That move is not possible." };
+  }
+  if (distance !== 1 && context.role !== "dm") {
     return { ok: false, error: "Move one tile at a time." };
   }
+  const allowRemoteDmMove = context.role === "dm" && distance !== 1;
   const now = context.now || Date.now();
   const sounds = [];
   let stateAlteringAction = false;
@@ -2738,11 +2745,14 @@ function applyMove(state, move, context) {
   }
 
   let tile = state.tiles[target.y][target.x];
-  const dir = DIRECTIONS.find((step) => step.dx === dx && step.dy === dy);
+  const dir = distance === 1 ? DIRECTIONS.find((step) => step.dx === dx && step.dy === dy) : null;
   if (tile.type === "rock") {
     return { ok: false, error: "Solid rock blocks the way." };
   }
   if (tile.type === "block") {
+    if (allowRemoteDmMove || !dir) {
+      return { ok: false, error: "That block cannot move there." };
+    }
     const pushed = tryPushBlock(state, { x: target.x, y: target.y }, dir, {
       requireUncovered: false,
     });

@@ -1358,6 +1358,10 @@ body.loaded .mine-board {
   z-index: 1;
 }
 
+.cell-content-question {
+  color: var(--text-muted);
+}
+
 .cell-tokens {
   position: absolute;
   inset: 2px;

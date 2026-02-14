@@ -852,8 +852,11 @@
     renderRoster();
   }
 
-  function commitTokenName(token) {
-    socket.emit("setTokenName", { tokenId: token.id, name: editingDraft });
+  function commitTokenName(token, name = editingDraft) {
+    if (editingTokenId !== token.id) {
+      return;
+    }
+    socket.emit("setTokenName", { tokenId: token.id, name });
     editingTokenId = null;
     editingDraft = "";
   }
@@ -950,7 +953,7 @@
         input.addEventListener("keydown", (event) => {
           if (event.key === "Enter") {
             event.preventDefault();
-            commitTokenName(token);
+            commitTokenName(token, input.value);
           }
           if (event.key === "Escape") {
             event.preventDefault();
@@ -958,7 +961,7 @@
           }
         });
         input.addEventListener("blur", () => {
-          commitTokenName(token);
+          commitTokenName(token, input.value);
         });
         nameEl.appendChild(input);
         setTimeout(() => input.focus(), 0);
@@ -1341,16 +1344,22 @@
             content = "EXIT";
           } else if (tile.type === "unknown") {
             content = "?";
+          } else if (tile.type === "empty" && !isDM && !tile.uncovered && tile.hasNumber) {
+            content = "?";
           } else if (
             tile.type === "empty" &&
-            (tile.uncovered || isDM) &&
-            tile.number > 0
+            Number.isFinite(tile.number) &&
+            tile.number > 0 &&
+            (tile.uncovered || isDM || !state.fogEnabled)
           ) {
             content = String(tile.number);
           }
           if (content) {
             const text = document.createElement("span");
             text.className = "cell-content";
+            if (content === "?") {
+              text.classList.add("cell-content-question");
+            }
             text.textContent = content;
             cell.appendChild(text);
           }
@@ -1481,7 +1490,8 @@
             return;
           }
           const origin = dragTokenId ? dragFrom : dragMonsterFrom;
-          if (origin && !isAdjacent(origin, { x, y })) {
+          const requiresAdjacentMove = Boolean(dragMonsterId) || !isDM;
+          if (origin && requiresAdjacentMove && !isAdjacent(origin, { x, y })) {
             return;
           }
           event.preventDefault();
@@ -1498,7 +1508,8 @@
             return;
           }
           const origin = dragTokenId ? dragFrom : dragMonsterFrom;
-          if (origin && !isAdjacent(origin, { x, y })) {
+          const requiresAdjacentMove = Boolean(dragMonsterId) || !isDM;
+          if (origin && requiresAdjacentMove && !isAdjacent(origin, { x, y })) {
             setMessage("Move one tile at a time.");
             return;
           }
