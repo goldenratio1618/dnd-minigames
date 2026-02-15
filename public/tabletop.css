@@ -248,6 +248,22 @@ body {
   gap: 6px;
 }
 
+.tt-field {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.tt-inline-value {
+  font-size: 0.84rem;
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 5px 8px;
+  background: rgba(7, 10, 9, 0.45);
+}
+
 .tt-form input,
 .tt-form select,
 .tt-form textarea,
@@ -312,6 +328,83 @@ body {
 .tt-list-item button {
   padding: 4px 8px;
   font-size: 0.72rem;
+}
+
+.tt-roster-token {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  overflow: hidden;
+  background: rgba(37, 50, 47, 0.95);
+  font-size: 0.66rem;
+}
+
+.tt-roster-token img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tt-token-preview {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(7, 10, 9, 0.35);
+}
+
+.tt-token-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  display: grid;
+  place-items: center;
+  font-size: 0.72rem;
+  overflow: hidden;
+  background: rgba(37, 50, 47, 0.95);
+}
+
+.tt-token-badge img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tt-token-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.tt-stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.tt-stat-item {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 6px;
+  background: rgba(4, 8, 7, 0.55);
+}
+
+.tt-stat-key {
+  font-size: 0.66rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.tt-stat-value {
+  font-size: 0.9rem;
+  color: var(--text);
 }
 
 .tt-grid2 {

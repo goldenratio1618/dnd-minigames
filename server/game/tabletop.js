@@ -397,11 +397,28 @@ function normalizeNumber(value, fallback = 0) {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function normalizeSheetCellText(value) {
+  return String(value === null || value === undefined ? "" : value).trim();
+}
+
+function parseSheetCellValue(value) {
+  const text = normalizeSheetCellText(value);
+  if (!text) {
+    return "";
+  }
+  const parsed = Number.parseFloat(text.replace(/[^0-9.+-]/g, ""));
+  if (Number.isFinite(parsed) && /[0-9]/.test(text)) {
+    return parsed;
+  }
+  return text;
+}
+
 function parseCharacterFromSheetRows(statsRows, featRows) {
   const result = {
     parsedAt: nowIso(),
     skills: {},
     feats: [],
+    currentValues: {},
     italicizedSkillDc: 0,
     strengthModifier: 0,
     speed: 30,
@@ -413,7 +430,19 @@ function parseCharacterFromSheetRows(statsRows, featRows) {
 
   for (let i = 0; i < statsRows.length; i += 1) {
     const row = statsRows[i] || [];
-    const label = String(row[0] || "").trim().toLowerCase();
+    const label = normalizeSkillName(row[0]);
+    const baseValue = parseSheetCellValue(row[1]);
+    const currentValue = parseSheetCellValue(row[3]);
+    const rowValue = currentValue !== "" ? currentValue : baseValue;
+
+    if (label && rowValue !== "") {
+      result.currentValues[label] = rowValue;
+      if (label === "hp") {
+        result.currentValues["current hp"] = rowValue;
+      } else if (label === "mana") {
+        result.currentValues["current mana"] = rowValue;
+      }
+    }
 
     if (label === "italicized skill dc") {
       result.italicizedSkillDc = normalizeNumber(row[1], 0);
@@ -421,7 +450,7 @@ function parseCharacterFromSheetRows(statsRows, featRows) {
     if (label === "speed") {
       result.speed = normalizeNumber(row[1], 30);
     }
-    if (label === "hp") {
+    if (label === "hp" || label === "max hp") {
       result.maxHp = Math.max(1, normalizeNumber(row[1], 1));
     }
 
@@ -453,6 +482,19 @@ function parseCharacterFromSheetRows(statsRows, featRows) {
       result.feats.push(featName);
     }
   });
+
+  if (result.currentValues.speed === undefined) {
+    result.currentValues.speed = result.speed;
+  }
+  if (result.currentValues["max hp"] === undefined) {
+    result.currentValues["max hp"] = result.maxHp;
+  }
+  if (result.currentValues["strength mod"] === undefined) {
+    result.currentValues["strength mod"] = result.strengthModifier;
+  }
+  if (result.currentValues.isdc === undefined) {
+    result.currentValues.isdc = result.italicizedSkillDc;
+  }
 
   return result;
 }
@@ -533,6 +575,10 @@ function parseStatblockColumn(rows, columnName) {
       maxHp: Math.max(1, normalizeNumber(byName.hp, 1)),
       italicizedSkillDc: 0,
       feats: [],
+      currentValues: {
+        speed: normalizeNumber(byName.speed, 30),
+        "max hp": Math.max(1, normalizeNumber(byName.hp, 1)),
+      },
       parsedAt: nowIso(),
     },
   };
@@ -836,6 +882,31 @@ function rollD20WithAdvantageLevel(advantageLevel, extraDice = 0) {
   };
 }
 
+function recomputeSelectedD20(d20Roll) {
+  if (!d20Roll || !Array.isArray(d20Roll.dice) || d20Roll.dice.length === 0) {
+    return;
+  }
+  d20Roll.selectedIndex = 0;
+  if (d20Roll.advantageLevel > 0) {
+    let best = d20Roll.dice[0];
+    for (let i = 1; i < d20Roll.dice.length; i += 1) {
+      if (d20Roll.dice[i] > best) {
+        best = d20Roll.dice[i];
+        d20Roll.selectedIndex = i;
+      }
+    }
+  } else if (d20Roll.advantageLevel < 0) {
+    let low = d20Roll.dice[0];
+    for (let i = 1; i < d20Roll.dice.length; i += 1) {
+      if (d20Roll.dice[i] < low) {
+        low = d20Roll.dice[i];
+        d20Roll.selectedIndex = i;
+      }
+    }
+  }
+  d20Roll.selected = d20Roll.dice[d20Roll.selectedIndex];
+}
+
 function chooseRarityFromD20(d20) {
   if (d20 <= 12) {
     return "common";
@@ -880,6 +951,7 @@ function parseManualStatblockText(text) {
   const stats = {
     skills: {},
     feats: [],
+    currentValues: {},
     parsedAt: nowIso(),
     italicizedSkillDc: normalizeNumber(byKey["italicized skill dc"], 0),
     strengthModifier: normalizeNumber(byKey.strength, 0),
@@ -923,6 +995,22 @@ function parseManualStatblockText(text) {
       stats.skills[skill] = normalizeNumber(byKey[skill], 0);
     }
   });
+
+  Object.keys(byKey).forEach((key) => {
+    stats.currentValues[key] = parseSheetCellValue(byKey[key]);
+  });
+  if (stats.currentValues.speed === undefined) {
+    stats.currentValues.speed = stats.speed;
+  }
+  if (stats.currentValues["max hp"] === undefined) {
+    stats.currentValues["max hp"] = stats.maxHp;
+  }
+  if (stats.currentValues["strength mod"] === undefined) {
+    stats.currentValues["strength mod"] = stats.strengthModifier;
+  }
+  if (stats.currentValues.isdc === undefined) {
+    stats.currentValues.isdc = stats.italicizedSkillDc;
+  }
 
   return stats;
 }
@@ -1404,26 +1492,7 @@ function createTabletopSystem(io, options = {}) {
       }
     }
 
-    d20Roll.selectedIndex = 0;
-    if (d20Roll.advantageLevel > 0) {
-      let best = d20Roll.dice[0];
-      for (let i = 1; i < d20Roll.dice.length; i += 1) {
-        if (d20Roll.dice[i] > best) {
-          best = d20Roll.dice[i];
-          d20Roll.selectedIndex = i;
-        }
-      }
-    } else if (d20Roll.advantageLevel < 0) {
-      let low = d20Roll.dice[0];
-      for (let i = 1; i < d20Roll.dice.length; i += 1) {
-        if (d20Roll.dice[i] < low) {
-          low = d20Roll.dice[i];
-          d20Roll.selectedIndex = i;
-        }
-      }
-    }
-
-    d20Roll.selected = d20Roll.dice[d20Roll.selectedIndex];
+    recomputeSelectedD20(d20Roll);
   }
 
   function resolveRoll(socket, payload) {
@@ -1501,10 +1570,10 @@ function createTabletopSystem(io, options = {}) {
     const actorFeats = new Set(parsed.feats || []);
 
     let bonusPenalty = 0;
-    let extraD20 = 0;
     let guidingDice = [];
     let postDieAdjustments = [];
     let forcedDieValue = null;
+    let fortuneOverFinesseEnabled = false;
 
     for (const modifier of requestedModifiers) {
       if (!modifier || !modifier.id) {
@@ -1541,9 +1610,7 @@ function createTabletopSystem(io, options = {}) {
       }
 
       if (modifierId === "fortune_over_finesse") {
-        const sacrificedTens = clamp(Number.parseInt(modifier.sacrificedTens, 10) || 0, 0, 6);
-        extraD20 += sacrificedTens;
-        bonusPenalty -= sacrificedTens * 10;
+        fortuneOverFinesseEnabled = true;
       }
 
       if (modifierId === "portent") {
@@ -1592,48 +1659,85 @@ function createTabletopSystem(io, options = {}) {
       }
     }
 
-    const d20Roll = rollD20WithAdvantageLevel(advantageLevel, extraD20);
-    if (forcedDieValue !== null) {
-      d20Roll.dice[d20Roll.selectedIndex] = forcedDieValue;
-      d20Roll.selected = forcedDieValue;
+    const baseBonusRaw = Number(baseBonus) || 0;
+    const fofExtraGroups = fortuneOverFinesseEnabled
+      ? clamp(Math.floor(Math.max(0, baseBonusRaw) / 10), 0, 12)
+      : 0;
+    const fofBonusSubtracted = fofExtraGroups * 10;
+    const effectiveBaseBonus = baseBonusRaw - fofBonusSubtracted;
+
+    const d20Groups = [];
+    for (let i = 0; i < 1 + fofExtraGroups; i += 1) {
+      d20Groups.push(rollD20WithAdvantageLevel(advantageLevel, 0));
     }
 
-    applyPassiveD20Modifiers(d20Roll, payload, actorEntity, externalModifiersUsed);
+    if (forcedDieValue !== null && d20Groups.length > 0) {
+      d20Groups[0].dice[d20Groups[0].selectedIndex] = forcedDieValue;
+      recomputeSelectedD20(d20Groups[0]);
+    }
+
+    d20Groups.forEach((group) => {
+      applyPassiveD20Modifiers(group, payload, actorEntity, externalModifiersUsed);
+    });
+
+    function flattenD20Entries() {
+      const entries = [];
+      d20Groups.forEach((group, groupIndex) => {
+        group.dice.forEach((value, dieIndex) => {
+          entries.push({
+            group,
+            groupIndex,
+            dieIndex,
+            value,
+          });
+        });
+      });
+      return entries;
+    }
+
+    function resolveTargetEntry(rawIndex, fallbackToSelected = true) {
+      const entries = flattenD20Entries();
+      if (entries.length === 0) {
+        return null;
+      }
+      const fallbackIndex = fallbackToSelected
+        ? entries.findIndex(
+          (entry) => entry.dieIndex === entry.group.selectedIndex && entry.groupIndex === 0
+        )
+        : 0;
+      const safeFallback = fallbackIndex >= 0 ? fallbackIndex : 0;
+      const targetIndex = clamp(
+        Number.parseInt(rawIndex, 10) || safeFallback,
+        0,
+        entries.length - 1
+      );
+      return entries[targetIndex];
+    }
 
     if (postDieAdjustments.some((entry) => entry.kind === "reroll_one_d20")) {
-      const targetIndex = clamp(
-        Number.parseInt(payload.targetDieIndexForReroll, 10) || d20Roll.selectedIndex,
-        0,
-        d20Roll.dice.length - 1
-      );
-      d20Roll.dice[targetIndex] = randomInt(1, 20);
-      d20Roll.selectedIndex = targetIndex;
-      d20Roll.selected = d20Roll.dice[targetIndex];
+      const target = resolveTargetEntry(payload.targetDieIndexForReroll);
+      if (target) {
+        target.group.dice[target.dieIndex] = randomInt(1, 20);
+        recomputeSelectedD20(target.group);
+      }
     }
 
     if (postDieAdjustments.some((entry) => entry.kind === "small_fortunes_external")) {
-      const targetIndex = clamp(
-        Number.parseInt(payload.targetDieIndexForSmallFortunes, 10) || d20Roll.selectedIndex,
-        0,
-        d20Roll.dice.length - 1
-      );
-      if (d20Roll.dice[targetIndex] === 1) {
-        d20Roll.dice[targetIndex] = randomInt(1, 20);
+      const target = resolveTargetEntry(payload.targetDieIndexForSmallFortunes);
+      if (target && target.group.dice[target.dieIndex] === 1) {
+        target.group.dice[target.dieIndex] = randomInt(1, 20);
       }
-      d20Roll.selectedIndex = targetIndex;
-      d20Roll.selected = d20Roll.dice[targetIndex];
+      if (target) {
+        recomputeSelectedD20(target.group);
+      }
     }
 
     if (postDieAdjustments.some((entry) => entry.kind === "miracle_worker")) {
-      const hasTwenty = d20Roll.dice.some((value) => value === 20);
-      if (hasTwenty && payload.useMiracleWorkerPenalty) {
+      const hasTwenty = flattenD20Entries().some((entry) => entry.value === 20);
+      if (hasTwenty && payload.useMiracleWorkerPenalty && d20Groups.length > 0) {
         bonusPenalty -= 10;
-        const extra = randomInt(1, 20);
-        d20Roll.dice.push(extra);
-        if (extra > d20Roll.selected) {
-          d20Roll.selectedIndex = d20Roll.dice.length - 1;
-          d20Roll.selected = extra;
-        }
+        d20Groups[0].dice.push(randomInt(1, 20));
+        recomputeSelectedD20(d20Groups[0]);
       }
     }
 
@@ -1645,10 +1749,29 @@ function createTabletopSystem(io, options = {}) {
     }
 
     const guidingTotal = guidingDice.reduce((acc, item) => acc + item.roll, 0);
+    const d20SelectedTotal = d20Groups.reduce((acc, group) => acc + Number(group.selected || 0), 0);
+    const flatD20Dice = d20Groups.flatMap((group) => group.dice);
+    const d20Roll = {
+      advantageLevel,
+      dice: flatD20Dice,
+      selectedIndex: d20Groups[0] ? d20Groups[0].selectedIndex : 0,
+      selected: d20SelectedTotal,
+      selectedTotal: d20SelectedTotal,
+      groups: d20Groups.map((group) => ({
+        dice: group.dice.slice(),
+        selectedIndex: group.selectedIndex,
+        selected: group.selected,
+      })),
+      fortuneOverFinesse: {
+        enabled: fortuneOverFinesseEnabled,
+        extraGroups: fofExtraGroups,
+        bonusSubtracted: fofBonusSubtracted,
+      },
+    };
 
     const total =
-      Number(d20Roll.selected) +
-      Number(baseBonus) +
+      Number(d20SelectedTotal) +
+      Number(effectiveBaseBonus) +
       Number(payload.flatModifier || 0) +
       bonusPenalty +
       guidingTotal +
@@ -1682,12 +1805,18 @@ function createTabletopSystem(io, options = {}) {
         skillName,
         normalizedSkill,
         rollType,
-        baseBonus,
+        baseBonus: effectiveBaseBonus,
+        baseBonusRaw,
         flatModifier: Number(payload.flatModifier || 0),
         advantageLevel,
         d20: d20Roll,
         guidingDice,
         bonusPenalty,
+        fortuneOverFinesse: {
+          enabled: fortuneOverFinesseEnabled,
+          extraGroups: fofExtraGroups,
+          bonusSubtracted: fofBonusSubtracted,
+        },
         postShift,
         total,
         modifiersApplied: requestedModifiers,
@@ -1838,26 +1967,46 @@ function createTabletopSystem(io, options = {}) {
         } catch (error) {
           target.sheetError = error.message;
           if (!target.parsedSheet) {
+            const speed = Number.parseInt(payload.speedOverride, 10) || 30;
+            const maxHp = Number.parseInt(payload.maxHpOverride, 10) || 1;
+            const strengthModifier = Number.parseInt(payload.strengthModifier, 10) || 0;
+            const italicizedSkillDc = Number.parseInt(payload.italicizedSkillDc, 10) || 0;
             target.parsedSheet = {
               skills: {},
               feats: [],
-              italicizedSkillDc: 0,
-              strengthModifier: 0,
-              speed: Number.parseInt(payload.speedOverride, 10) || 30,
-              maxHp: Number.parseInt(payload.maxHpOverride, 10) || 1,
+              currentValues: {
+                speed,
+                "max hp": maxHp,
+                "strength mod": strengthModifier,
+                isdc: italicizedSkillDc,
+              },
+              italicizedSkillDc,
+              strengthModifier,
+              speed,
+              maxHp,
               resistDamageBonus: Number.parseInt(payload.resistDamageOverride, 10) || 0,
               initiativeBonus: Number.parseInt(payload.initiativeOverride, 10) || 0,
             };
           }
         }
       } else {
+        const italicizedSkillDc = Number.parseInt(payload.italicizedSkillDc, 10) || 0;
+        const strengthModifier = Number.parseInt(payload.strengthModifier, 10) || 0;
+        const speed = Number.parseInt(payload.speedOverride, 10) || 30;
+        const maxHp = Number.parseInt(payload.maxHpOverride, 10) || 1;
         target.parsedSheet = {
           skills: {},
           feats: [],
-          italicizedSkillDc: Number.parseInt(payload.italicizedSkillDc, 10) || 0,
-          strengthModifier: Number.parseInt(payload.strengthModifier, 10) || 0,
-          speed: Number.parseInt(payload.speedOverride, 10) || 30,
-          maxHp: Number.parseInt(payload.maxHpOverride, 10) || 1,
+          currentValues: {
+            speed,
+            "max hp": maxHp,
+            "strength mod": strengthModifier,
+            isdc: italicizedSkillDc,
+          },
+          italicizedSkillDc,
+          strengthModifier,
+          speed,
+          maxHp,
           resistDamageBonus: Number.parseInt(payload.resistDamageOverride, 10) || 0,
           initiativeBonus: Number.parseInt(payload.initiativeOverride, 10) || 0,
           feats: String(payload.featsText || "")
@@ -1877,6 +2026,42 @@ function createTabletopSystem(io, options = {}) {
       appendSystemLog(socket, `${user.username} saved character ${target.name}.`);
       persistence.saveSoon();
       broadcastSnapshots();
+    });
+
+    socket.on("character:refresh", async (payload) => {
+      if (!requireAuth(socket)) {
+        return;
+      }
+      const characterId = String((payload && payload.id) || "");
+      const target = state.characters.find((candidate) => candidate.id === characterId) || null;
+      if (!target) {
+        socket.emit("tabletop:error", { message: "Character not found." });
+        return;
+      }
+      if (socket.data.role !== "dm" && target.ownerUserId !== socket.data.user.id) {
+        socket.emit("tabletop:error", { message: "You cannot refresh this character." });
+        return;
+      }
+      if (!target.sheetUrl) {
+        socket.emit("tabletop:error", { message: "This character does not have a sheet URL." });
+        return;
+      }
+
+      try {
+        target.parsedSheet = await parseCharacterSheet(target.sheetUrl);
+        target.sheetError = null;
+        target.updatedAt = nowIso();
+        target.availableModifiers = computeAvailableModifiers(target);
+        socket.emit("tabletop:notice", { message: `Refreshed ${target.name}.` });
+        appendSystemLog(socket, `${socket.data.user.username} refreshed ${target.name} from sheet.`);
+        persistence.saveSoon();
+        broadcastSnapshots();
+      } catch (error) {
+        target.sheetError = error.message;
+        persistence.saveSoon();
+        broadcastSnapshots();
+        socket.emit("tabletop:error", { message: `Refresh failed: ${error.message}` });
+      }
     });
 
     socket.on("character:delete", (payload) => {
@@ -2543,11 +2728,15 @@ function createTabletopSystem(io, options = {}) {
       }
 
       const rollData = result.roll;
+      const isdcLogText =
+        rollData.isdcCheck && rollData.isdcCheck.required
+          ? ` | ISDC ${rollData.isdcCheck.passed ? "pass" : "fail"} (${rollData.isdcCheck.total}/${rollData.isdcCheck.dc})`
+          : "";
       appendLog(
         createLogEntry({
           type: "roll",
           actor: socket.data.user.username,
-          message: `${result.actorEntity.name} rolled ${rollData.skillName}: ${rollData.total}`,
+          message: `${result.actorEntity.name} rolled ${rollData.skillName}: ${rollData.total}${isdcLogText}`,
           details: {
             entityId: result.actorEntity.id,
             entityName: result.actorEntity.name,

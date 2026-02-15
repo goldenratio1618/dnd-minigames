@@ -21,6 +21,14 @@
     registerDmCode: document.getElementById("register-dm-code"),
 
     characterCard: document.getElementById("character-card"),
+    characterSelect: document.getElementById("character-select"),
+    characterNewButton: document.getElementById("character-new-button"),
+    characterRefreshButton: document.getElementById("character-refresh-button"),
+    characterTokenPreview: document.getElementById("character-token-preview"),
+    characterTokenBadge: document.getElementById("character-token-badge"),
+    characterTokenLabel: document.getElementById("character-token-label"),
+    characterStatsSummary: document.getElementById("character-stats-summary"),
+    characterStatsDetailGrid: document.getElementById("character-stats-detail-grid"),
     characterList: document.getElementById("character-list"),
     characterForm: document.getElementById("character-form"),
     characterId: document.getElementById("character-id"),
@@ -28,6 +36,7 @@
     characterSheetUrl: document.getElementById("character-sheet-url"),
     characterFeatsText: document.getElementById("character-feats-text"),
     characterTokenImage: document.getElementById("character-token-image"),
+    characterTokenFile: document.getElementById("character-token-file"),
     characterSpeed: document.getElementById("character-speed"),
     characterMaxHp: document.getElementById("character-max-hp"),
     characterStrengthMod: document.getElementById("character-strength-mod"),
@@ -69,13 +78,11 @@
     rollCard: document.getElementById("roll-card"),
     rollForm: document.getElementById("roll-form"),
     rollEntitySelect: document.getElementById("roll-entity-select"),
-    rollSkill: document.getElementById("roll-skill"),
-    rollType: document.getElementById("roll-type"),
+    rollSkillSelect: document.getElementById("roll-skill-select"),
+    rollTypeDisplay: document.getElementById("roll-type-display"),
     rollAdvantage: document.getElementById("roll-advantage"),
-    rollFlatModifier: document.getElementById("roll-flat-modifier"),
-    rollFortuneTens: document.getElementById("roll-fortune-tens"),
+    rollSkillModifier: document.getElementById("roll-skill-modifier"),
     rollTargetDieIndex: document.getElementById("roll-target-die-index"),
-    rollPortentValue: document.getElementById("roll-portent-value"),
     rollShiftingMode: document.getElementById("roll-shifting-mode"),
     rollUseMiracle: document.getElementById("roll-use-miracle"),
     rollBonusOverride: document.getElementById("roll-bonus-override"),
@@ -86,6 +93,7 @@
     approvedModifierList: document.getElementById("approved-modifier-list"),
     rollResult: document.getElementById("roll-result"),
 
+    injuryCard: document.getElementById("injury-card"),
     dmToolsCard: document.getElementById("dm-tools-card"),
     forageTerrain: document.getElementById("forage-terrain"),
     forageRoll: document.getElementById("forage-roll"),
@@ -115,6 +123,9 @@
     snapshot: null,
     selectedTokenId: null,
     selectedPlacement: null,
+    selectedCharacterId: null,
+    pendingCharacterSelection: null,
+    lastRollSkillKey: null,
     checkedSelfModifiers: new Set(),
     checkedApprovedModifierIds: new Set(),
     approvedModifierEntries: [],
@@ -235,10 +246,196 @@
     elements.characterSheetUrl.value = "";
     elements.characterFeatsText.value = "";
     elements.characterTokenImage.value = "";
+    if (elements.characterTokenFile) {
+      elements.characterTokenFile.value = "";
+    }
     elements.characterSpeed.value = "";
     elements.characterMaxHp.value = "";
     elements.characterStrengthMod.value = "";
     elements.characterIsdc.value = "";
+    renderCharacterPanels(null);
+  }
+
+  function normalizeLabel(text) {
+    return String(text || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+  }
+
+  function numericInputValue(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? String(parsed) : "";
+  }
+
+  function formatStatKey(key) {
+    return String(key || "")
+      .split(" ")
+      .filter(Boolean)
+      .map((word) => word[0].toUpperCase() + word.slice(1))
+      .join(" ");
+  }
+
+  function formatStatValue(value) {
+    if (value === null || value === undefined || value === "") {
+      return "-";
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+    return String(value);
+  }
+
+  function renderStatGrid(container, pairs) {
+    if (!container) {
+      return;
+    }
+    container.innerHTML = "";
+    pairs.forEach((pair) => {
+      const item = document.createElement("div");
+      item.className = "tt-stat-item";
+
+      const key = document.createElement("div");
+      key.className = "tt-stat-key";
+      key.textContent = formatStatKey(pair.key);
+      item.appendChild(key);
+
+      const value = document.createElement("div");
+      value.className = "tt-stat-value";
+      value.textContent = formatStatValue(pair.value);
+      item.appendChild(value);
+
+      container.appendChild(item);
+    });
+  }
+
+  function renderCharacterPanels(character) {
+    const badge = elements.characterTokenBadge;
+    const label = elements.characterTokenLabel;
+    if (badge) {
+      badge.innerHTML = "";
+      if (character && character.tokenImage) {
+        const image = document.createElement("img");
+        image.src = character.tokenImage;
+        image.alt = character.name || "Token";
+        badge.appendChild(image);
+      } else {
+        badge.textContent = character ? initials(character.name) : "?";
+      }
+    }
+    if (label) {
+      label.textContent = character ? `${character.name} token` : "No token selected";
+    }
+
+    const parsed = (character && character.parsedSheet) || {};
+    const currentValues = parsed.currentValues && typeof parsed.currentValues === "object"
+      ? parsed.currentValues
+      : {};
+    const lookup = new Map(
+      Object.keys(currentValues).map((key) => [normalizeLabel(key), currentValues[key]])
+    );
+    const statValue = (primary, fallback = "") => {
+      if (lookup.has(primary)) {
+        return lookup.get(primary);
+      }
+      if (fallback && lookup.has(fallback)) {
+        return lookup.get(fallback);
+      }
+      return "";
+    };
+
+    const summaryPairs = [
+      { key: "Current HP", value: statValue("current hp", "hp") },
+      { key: "Current Mana", value: statValue("current mana", "mana") },
+      { key: "Humility", value: statValue("humility") },
+      { key: "DR", value: statValue("dr") },
+      { key: "AC", value: statValue("ac") },
+      { key: "Speed", value: Number.isFinite(Number(parsed.speed)) ? Number(parsed.speed) : statValue("speed") },
+    ];
+    renderStatGrid(elements.characterStatsSummary, summaryPairs);
+
+    const detailPairs = [
+      { key: "Max HP", value: parsed.maxHp },
+      { key: "Strength Mod", value: parsed.strengthModifier },
+      { key: "ISDC", value: parsed.italicizedSkillDc },
+    ];
+    const shownDetailKeys = new Set([
+      ...detailPairs.map((entry) => normalizeLabel(entry.key)),
+      "current hp",
+      "hp",
+      "current mana",
+      "mana",
+      "humility",
+      "dr",
+      "ac",
+      "speed",
+    ]);
+    Object.keys(currentValues)
+      .sort((a, b) => a.localeCompare(b))
+      .forEach((key) => {
+        const normalized = normalizeLabel(key);
+        if (shownDetailKeys.has(normalized)) {
+          return;
+        }
+        detailPairs.push({
+          key: formatStatKey(normalized),
+          value: currentValues[key],
+        });
+      });
+    renderStatGrid(elements.characterStatsDetailGrid, detailPairs);
+  }
+
+  function fillCharacterForm(character) {
+    if (!character) {
+      resetCharacterForm();
+      return;
+    }
+    elements.characterId.value = character.id || "";
+    elements.characterName.value = character.name || "";
+    elements.characterSheetUrl.value = character.sheetUrl || "";
+    elements.characterTokenImage.value = character.tokenImage || "";
+    if (elements.characterTokenFile) {
+      elements.characterTokenFile.value = "";
+    }
+    const parsed = character.parsedSheet || {};
+    elements.characterFeatsText.value = Array.isArray(parsed.feats) ? parsed.feats.join("\n") : "";
+    elements.characterSpeed.value = numericInputValue(parsed.speed);
+    elements.characterMaxHp.value = numericInputValue(parsed.maxHp);
+    elements.characterStrengthMod.value = numericInputValue(parsed.strengthModifier);
+    elements.characterIsdc.value = numericInputValue(parsed.italicizedSkillDc);
+    state.selectedCharacterId = character.id || null;
+    if (elements.characterSelect) {
+      elements.characterSelect.value = character.id || "";
+    }
+    renderCharacterPanels(character);
+    const rollValue = character && character.id ? `character:${character.id}` : "";
+    if (
+      rollValue &&
+      Array.from(elements.rollEntitySelect.options).some((option) => option.value === rollValue)
+    ) {
+      elements.rollEntitySelect.value = rollValue;
+      state.checkedSelfModifiers.clear();
+      state.checkedApprovedModifierIds.clear();
+      state.lastRollSkillKey = null;
+      renderRollSkillOptions();
+      renderRollModifiers();
+    }
+  }
+
+  function selectCharacterById(characterId, availableCharacters, shouldPopulate = true) {
+    const list = Array.isArray(availableCharacters) ? availableCharacters : isDm() ? characters() : ownCharacters();
+    const found = list.find((character) => character.id === characterId) || null;
+    state.selectedCharacterId = found ? found.id : null;
+    if (elements.characterSelect) {
+      elements.characterSelect.value = found ? found.id : "";
+    }
+    if (shouldPopulate) {
+      if (found) {
+        fillCharacterForm(found);
+      } else {
+        resetCharacterForm();
+      }
+    }
   }
 
   function resetStatblockForm() {
@@ -268,7 +465,6 @@
   }
 
   function renderCharacters() {
-    const me = userId();
     const canSeeAll = isDm();
     const list = canSeeAll ? characters() : ownCharacters();
 
@@ -288,16 +484,7 @@
       editButton.type = "button";
       editButton.textContent = "Edit";
       editButton.addEventListener("click", () => {
-        elements.characterId.value = character.id;
-        elements.characterName.value = character.name || "";
-        elements.characterSheetUrl.value = character.sheetUrl || "";
-        elements.characterTokenImage.value = character.tokenImage || "";
-        const parsed = character.parsedSheet || {};
-        elements.characterFeatsText.value = Array.isArray(parsed.feats) ? parsed.feats.join("\n") : "";
-        elements.characterSpeed.value = parsed.speed || "";
-        elements.characterMaxHp.value = parsed.maxHp || "";
-        elements.characterStrengthMod.value = parsed.strengthModifier || "";
-        elements.characterIsdc.value = parsed.italicizedSkillDc || "";
+        fillCharacterForm(character);
       });
       controls.appendChild(editButton);
 
@@ -307,6 +494,9 @@
       deleteButton.addEventListener("click", () => {
         if (!window.confirm(`Delete ${character.name}?`)) {
           return;
+        }
+        if (state.selectedCharacterId === character.id) {
+          state.selectedCharacterId = null;
         }
         emit("character:delete", { id: character.id });
       });
@@ -326,14 +516,86 @@
     });
 
     elements.characterCard.classList.toggle("tt-hidden", !isAuthenticated());
+    if (!elements.characterSelect) {
+      return;
+    }
 
-    if (isDm()) {
-      const select = elements.rollEntitySelect;
-      const currentValue = select.value;
-      const canKeep = list.some((character) => `character:${character.id}` === currentValue);
-      if (!canKeep && ownCharacters().length > 0) {
-        elements.rollEntitySelect.value = `character:${ownCharacters()[0].id}`;
+    const previousSelectedId = state.selectedCharacterId;
+    const pending = state.pendingCharacterSelection;
+    let selectedId = "";
+    let shouldPopulateSelection = false;
+
+    elements.characterSelect.innerHTML = "";
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "New character";
+    elements.characterSelect.appendChild(placeholder);
+
+    list.forEach((character) => {
+      const option = document.createElement("option");
+      option.value = character.id;
+      option.textContent = character.name || "Unnamed Character";
+      elements.characterSelect.appendChild(option);
+    });
+
+    if (pending) {
+      let matched = null;
+      if (pending.id) {
+        matched = list.find((character) => character.id === pending.id) || null;
       }
+      if (!matched && pending.name) {
+        const byName = list
+          .filter(
+            (character) =>
+              normalizeLabel(character.name) === pending.name &&
+              (!pending.ownerUserId || character.ownerUserId === pending.ownerUserId)
+          )
+          .sort(
+            (a, b) =>
+              new Date(b.updatedAt || 0).getTime() -
+              new Date(a.updatedAt || 0).getTime()
+          );
+        matched = byName[0] || null;
+      }
+      if (matched) {
+        selectedId = matched.id;
+        shouldPopulateSelection = true;
+        state.pendingCharacterSelection = null;
+      } else if (Date.now() - Number(pending.submittedAt || 0) > 20_000) {
+        state.pendingCharacterSelection = null;
+      }
+    }
+
+    if (!selectedId && previousSelectedId && list.some((character) => character.id === previousSelectedId)) {
+      selectedId = previousSelectedId;
+    }
+
+    if (
+      !selectedId &&
+      elements.characterId.value &&
+      list.some((character) => character.id === elements.characterId.value)
+    ) {
+      selectedId = elements.characterId.value;
+    }
+
+    if (
+      !selectedId &&
+      list.length === 1 &&
+      !elements.characterId.value &&
+      !elements.characterName.value.trim()
+    ) {
+      selectedId = list[0].id;
+      shouldPopulateSelection = true;
+    }
+
+    elements.characterSelect.value = selectedId || "";
+    state.selectedCharacterId = selectedId || null;
+    const selectedCharacter = list.find((character) => character.id === selectedId) || null;
+
+    if (shouldPopulateSelection && selectedId) {
+      fillCharacterForm(selectedCharacter);
+    } else {
+      renderCharacterPanels(selectedCharacter);
     }
   }
 
@@ -456,6 +718,18 @@
     return token.ownerUserId === me;
   }
 
+  function placeTokenAt(x, y, placement) {
+    if (!placement) {
+      return;
+    }
+    emit("token:place", {
+      x,
+      y,
+      layer: elements.tokenLayerSelect.value,
+      ...placement,
+    });
+  }
+
   function handleCellClick(x, y, cell) {
     if (!state.snapshot) {
       return;
@@ -477,12 +751,7 @@
         setStatus("Select a token source first.", true);
         return;
       }
-      emit("token:place", {
-        x,
-        y,
-        layer: elements.tokenLayerSelect.value,
-        ...state.selectedPlacement,
-      });
+      placeTokenAt(x, y, state.selectedPlacement);
       return;
     }
 
@@ -541,6 +810,30 @@
         }
 
         button.addEventListener("click", () => handleCellClick(x, y, cell));
+        if (isDm()) {
+          button.addEventListener("dragover", (event) => {
+            event.preventDefault();
+          });
+          button.addEventListener("drop", (event) => {
+            event.preventDefault();
+            const raw = event.dataTransfer
+              ? event.dataTransfer.getData("application/x-tabletop-placement") ||
+                event.dataTransfer.getData("text/plain")
+              : "";
+            if (!raw) {
+              return;
+            }
+            try {
+              const placement = JSON.parse(raw);
+              if (!placement || !placement.sourceType || !placement.name) {
+                return;
+              }
+              placeTokenAt(x, y, placement);
+            } catch (error) {
+              setStatus("Could not read dropped token.", true);
+            }
+          });
+        }
         elements.mapGridCells.appendChild(button);
       });
     });
@@ -602,6 +895,31 @@
         tokenEl.title = token.name;
       }
 
+      if (isDm()) {
+        holder.addEventListener("dragover", (event) => {
+          event.preventDefault();
+        });
+        holder.addEventListener("drop", (event) => {
+          event.preventDefault();
+          const raw = event.dataTransfer
+            ? event.dataTransfer.getData("application/x-tabletop-placement") ||
+              event.dataTransfer.getData("text/plain")
+            : "";
+          if (!raw) {
+            return;
+          }
+          try {
+            const placement = JSON.parse(raw);
+            if (!placement || !placement.sourceType || !placement.name) {
+              return;
+            }
+            placeTokenAt(token.x, token.y, placement);
+          } catch (error) {
+            setStatus("Could not read dropped token.", true);
+          }
+        });
+      }
+
       holder.appendChild(tokenEl);
       elements.mapGridTokens.appendChild(holder);
     });
@@ -630,28 +948,59 @@
       })),
     ];
 
+    const choosePlacement = (entry) => {
+      state.selectedPlacement = {
+        sourceType: entry.type,
+        sourceId: entry.id,
+        name: entry.name,
+        tokenImage: entry.tokenImage || "",
+      };
+      elements.interactionMode.value = "place";
+      setStatus(`Selected ${entry.name} for placement.`);
+      renderTokenRoster();
+    };
+
     allEntries.forEach((entry) => {
       const item = document.createElement("div");
       item.className = "tt-list-item";
+      item.draggable = true;
+      item.title = "Drag onto the map to place this token.";
+      item.addEventListener("dragstart", (event) => {
+        const payload = JSON.stringify({
+          sourceType: entry.type,
+          sourceId: entry.id,
+          name: entry.name,
+          tokenImage: entry.tokenImage || "",
+        });
+        if (event.dataTransfer) {
+          event.dataTransfer.setData("application/x-tabletop-placement", payload);
+          event.dataTransfer.setData("text/plain", payload);
+          event.dataTransfer.effectAllowed = "copy";
+        }
+      });
 
       const label = document.createElement("div");
-      label.textContent = `${entry.name} (${entry.type})`;
+      label.className = "tt-row";
+      const tokenBubble = document.createElement("div");
+      tokenBubble.className = "tt-roster-token";
+      if (entry.tokenImage) {
+        const image = document.createElement("img");
+        image.src = entry.tokenImage;
+        image.alt = entry.name;
+        tokenBubble.appendChild(image);
+      } else {
+        tokenBubble.textContent = initials(entry.name);
+      }
+      label.appendChild(tokenBubble);
+      const labelText = document.createElement("div");
+      labelText.textContent = `${entry.name} (${entry.type})`;
+      label.appendChild(labelText);
       item.appendChild(label);
 
       const place = document.createElement("button");
       place.type = "button";
       place.textContent = "Use";
-      place.addEventListener("click", () => {
-        state.selectedPlacement = {
-          sourceType: entry.type,
-          sourceId: entry.id,
-          name: entry.name,
-          tokenImage: entry.tokenImage || "",
-        };
-        elements.interactionMode.value = "place";
-        setStatus(`Selected ${entry.name} for placement.`);
-        renderTokenRoster();
-      });
+      place.addEventListener("click", () => choosePlacement(entry));
       item.appendChild(place);
 
       if (
@@ -679,17 +1028,39 @@
         return;
       }
       const tokenImage = window.prompt("Token image URL or data URI (optional):", "") || "";
-      state.selectedPlacement = {
+      const placement = {
         sourceType: "custom",
         sourceId: "",
         name,
         tokenImage,
       };
+      state.selectedPlacement = placement;
       elements.interactionMode.value = "place";
       setStatus(`Selected custom token ${name}.`);
       renderTokenRoster();
     });
     customItem.appendChild(customButton);
+    customItem.draggable = true;
+    customItem.title = "Drag onto the map to place a custom token.";
+    customItem.addEventListener("dragstart", (event) => {
+      const name = window.prompt("Custom token name:", "Custom");
+      if (!name) {
+        event.preventDefault();
+        return;
+      }
+      const tokenImage = window.prompt("Token image URL or data URI (optional):", "") || "";
+      const payload = JSON.stringify({
+        sourceType: "custom",
+        sourceId: "",
+        name,
+        tokenImage,
+      });
+      if (event.dataTransfer) {
+        event.dataTransfer.setData("application/x-tabletop-placement", payload);
+        event.dataTransfer.setData("text/plain", payload);
+        event.dataTransfer.effectAllowed = "copy";
+      }
+    });
     elements.tokenRoster.appendChild(customItem);
   }
 
@@ -708,19 +1079,235 @@
     elements.selectedTokenControls.classList.remove("tt-hidden");
   }
 
+  const HIDDEN_SELF_MODIFIERS = new Set(["bottled_luck"]);
+
+  const MAJOR_SKILL_ORDER = [
+    "melee weapons",
+    "ranged weapons",
+    "dodge",
+    "health pool",
+    "mana pool",
+    "resist condition",
+    "resist damage",
+    "resistive willpower",
+    "evoke runes",
+    "initiative",
+    "beseech the gods",
+  ];
+
+  const MINOR_SKILL_ORDER = [
+    "strength",
+    "athletics",
+    "stealth",
+    "endurance",
+    "resist pain",
+    "assertive willpower",
+    "problem solving",
+    "craft magic item",
+    "knowledge (lore)",
+    "knowledge (magic)",
+    "knowledge (biology)",
+    "perception",
+    "charisma",
+    "perform",
+    "sense motive",
+    "deception",
+    "interact with nature",
+  ];
+
+  const SKILL_MENU_ORDER = [...MAJOR_SKILL_ORDER, ...MINOR_SKILL_ORDER];
+  const MAJOR_SKILL_SET = new Set(MAJOR_SKILL_ORDER);
+  const MINOR_SKILL_SET = new Set(MINOR_SKILL_ORDER);
+  const ATTACK_SKILLS = new Set(["melee weapons", "ranged weapons"]);
+
+  function skillDisplayName(skillName) {
+    return String(skillName || "")
+      .split(" ")
+      .filter(Boolean)
+      .map((word) => word[0].toUpperCase() + word.slice(1))
+      .join(" ");
+  }
+
+  function deriveRollTypeFromSkill(skillName, rollTypeHint = "") {
+    const hint = normalizeLabel(rollTypeHint);
+    if (hint) {
+      return hint;
+    }
+    const normalized = normalizeLabel(skillName);
+    if (!normalized) {
+      return "major_skill";
+    }
+    if (normalized === "prepared prayer") {
+      return "prepared_prayer";
+    }
+    if (normalized === "beseech the gods") {
+      return "beseech_the_gods";
+    }
+    if (normalized === "resistive willpower") {
+      return "resistive_willpower";
+    }
+    if (ATTACK_SKILLS.has(normalized)) {
+      return "attack";
+    }
+    if (MINOR_SKILL_SET.has(normalized)) {
+      return "minor_skill";
+    }
+    if (MAJOR_SKILL_SET.has(normalized)) {
+      return "major_skill";
+    }
+    return "major_skill";
+  }
+
+  function rollContextLabel(rollType) {
+    const labels = {
+      major_skill: "Major Skill",
+      minor_skill: "Minor Skill",
+      attack: "Attack",
+      saving_throw: "Saving Throw",
+      beseech_the_gods: "Beseech the Gods",
+      prepared_prayer: "Prepared Prayer",
+      constitution_check: "Constitution Check",
+      resistive_willpower: "Resistive Willpower",
+    };
+    return labels[rollType] || rollType;
+  }
+
+  function rollContextValue() {
+    return normalizeLabel(
+      elements.rollTypeDisplay && elements.rollTypeDisplay.dataset
+        ? elements.rollTypeDisplay.dataset.value
+        : elements.rollTypeDisplay.textContent
+    ) || "major_skill";
+  }
+
+  function setRollContext(rollType) {
+    const normalized = normalizeLabel(rollType) || "major_skill";
+    if (elements.rollTypeDisplay && elements.rollTypeDisplay.dataset) {
+      elements.rollTypeDisplay.dataset.value = normalized;
+    }
+    elements.rollTypeDisplay.textContent = rollContextLabel(normalized);
+  }
+
+  function normalizedSkillValue() {
+    return normalizeLabel(elements.rollSkillSelect ? elements.rollSkillSelect.value : "");
+  }
+
+  function getEntitySkillEntries(entity) {
+    const parsed = (entity && entity.parsedSheet) || {};
+    const skills = parsed.skills && typeof parsed.skills === "object" ? parsed.skills : {};
+    const normalizedSkills = new Map();
+    Object.keys(skills).forEach((rawKey) => {
+      normalizedSkills.set(normalizeLabel(rawKey), Number(skills[rawKey]));
+    });
+
+    const hasParsedSkills = normalizedSkills.size > 0;
+    const entries = [];
+    SKILL_MENU_ORDER.forEach((skillName) => {
+      if (hasParsedSkills && !normalizedSkills.has(skillName)) {
+        return;
+      }
+      const rawBonus = normalizedSkills.has(skillName) ? normalizedSkills.get(skillName) : 0;
+      const bonus = Number.isFinite(rawBonus) ? rawBonus : 0;
+      entries.push({
+        value: skillName,
+        label: skillDisplayName(skillName),
+        bonus,
+      });
+    });
+    return entries;
+  }
+
+  function getSkillBonusForEntity(entity, skillName) {
+    const normalized = normalizeLabel(skillName);
+    if (!entity || !normalized) {
+      return 0;
+    }
+    const parsed = entity.parsedSheet || {};
+    const skills = parsed.skills && typeof parsed.skills === "object" ? parsed.skills : {};
+    const exactKey = Object.keys(skills).find((key) => normalizeLabel(key) === normalized);
+    if (!exactKey) {
+      return 0;
+    }
+    const bonus = Number(skills[exactKey]);
+    return Number.isFinite(bonus) ? bonus : 0;
+  }
+
+  function syncRollSkillContext(rollTypeHint = "") {
+    const parsed = parseEntitySelectValue(elements.rollEntitySelect.value);
+    const entity = parsed ? parsed.entity : null;
+    const skillName = elements.rollSkillSelect.value;
+    const rollType = deriveRollTypeFromSkill(skillName, rollTypeHint);
+    setRollContext(rollType);
+
+    const selectedKey = `${parsed ? `${parsed.type}:${parsed.id}` : "none"}:${normalizeLabel(skillName)}`;
+    if (state.lastRollSkillKey !== selectedKey) {
+      elements.rollSkillModifier.value = String(getSkillBonusForEntity(entity, skillName));
+      state.lastRollSkillKey = selectedKey;
+    }
+  }
+
+  function renderRollSkillOptions(preferredSkillName = "", preferredRollType = "") {
+    const parsed = parseEntitySelectValue(elements.rollEntitySelect.value);
+    const entity = parsed ? parsed.entity : null;
+    const currentValue = normalizeLabel(elements.rollSkillSelect.value);
+    const desiredValue = normalizeLabel(preferredSkillName);
+    const skills = getEntitySkillEntries(entity);
+
+    elements.rollSkillSelect.innerHTML = "";
+    const majorGroup = document.createElement("optgroup");
+    majorGroup.label = "Major Skills";
+    const minorGroup = document.createElement("optgroup");
+    minorGroup.label = "Minor Skills";
+
+    skills.forEach((entry) => {
+      const option = document.createElement("option");
+      option.value = entry.value;
+      option.textContent = entry.label;
+      if (MINOR_SKILL_SET.has(entry.value)) {
+        minorGroup.appendChild(option);
+      } else {
+        majorGroup.appendChild(option);
+      }
+    });
+
+    if (majorGroup.children.length > 0) {
+      elements.rollSkillSelect.appendChild(majorGroup);
+    }
+    if (minorGroup.children.length > 0) {
+      elements.rollSkillSelect.appendChild(minorGroup);
+    }
+
+    if (desiredValue && skills.some((entry) => entry.value === desiredValue)) {
+      elements.rollSkillSelect.value = desiredValue;
+    } else if (currentValue && skills.some((entry) => entry.value === currentValue)) {
+      elements.rollSkillSelect.value = currentValue;
+    } else if (skills.length > 0) {
+      elements.rollSkillSelect.value = skills[0].value;
+    }
+
+    if (desiredValue && !skills.some((entry) => entry.value === desiredValue)) {
+      const option = document.createElement("option");
+      option.value = desiredValue;
+      option.textContent = skillDisplayName(desiredValue);
+      elements.rollSkillSelect.appendChild(option);
+      elements.rollSkillSelect.value = desiredValue;
+    }
+
+    syncRollSkillContext(preferredRollType);
+  }
+
   function deriveModifiersFromEntity(entity) {
     if (!entity) {
       return [];
     }
-    if (Array.isArray(entity.availableModifiers) && entity.availableModifiers.length > 0) {
-      return entity.availableModifiers.slice();
-    }
 
     const catalog = mapOfModifierCatalog();
-    const feats = new Set((entity.parsedSheet && entity.parsedSheet.feats) || []);
+    const feats = new Set(
+      ((entity.parsedSheet && entity.parsedSheet.feats) || []).map((featName) => normalizeLabel(featName))
+    );
     const resolved = [];
     Object.values(catalog).forEach((modifier) => {
-      if ((modifier.featNames || []).some((featName) => feats.has(featName))) {
+      if ((modifier.featNames || []).some((featName) => feats.has(normalizeLabel(featName)))) {
         resolved.push(modifier.id);
       }
     });
@@ -819,13 +1406,15 @@
     } else if (options.length > 0) {
       elements.rollEntitySelect.value = options[0].value;
     }
-
+    renderRollSkillOptions();
     renderRollModifiers();
   }
 
   function renderRollModifiers() {
     const parsed = parseEntitySelectValue(elements.rollEntitySelect.value);
     const entity = parsed ? parsed.entity : null;
+    const rollType = rollContextValue();
+    const skillName = normalizedSkillValue();
     const selfModifiers = deriveModifiersFromEntity(entity);
     const catalog = mapOfModifierCatalog();
 
@@ -833,8 +1422,11 @@
 
     elements.rollModifierList.innerHTML = "";
     selfModifiers.forEach((modifierId) => {
+      if (HIDDEN_SELF_MODIFIERS.has(modifierId)) {
+        return;
+      }
       const meta = catalog[modifierId];
-      if (!doesModifierApply(meta, elements.rollType.value, elements.rollSkill.value)) {
+      if (!doesModifierApply(meta, rollType, skillName)) {
         return;
       }
       const row = document.createElement("label");
@@ -867,6 +1459,10 @@
     elements.approvedModifierList.innerHTML = "";
     const keepApproved = new Set();
     state.approvedModifierEntries.forEach((entry) => {
+      const meta = catalog[entry.modifierId];
+      if (!doesModifierApply(meta, rollType, skillName)) {
+        return;
+      }
       const row = document.createElement("label");
       row.className = "tt-list-item";
       const text = document.createElement("span");
@@ -905,17 +1501,6 @@
     state.checkedApprovedModifierIds = keepApproved;
 
     renderAllyModifierSelectors();
-
-    const parsedSheet = entity && entity.parsedSheet ? entity.parsedSheet : null;
-    if (parsedSheet && parsedSheet.skills) {
-      const normalizedSkill = String(elements.rollSkill.value || "").trim().toLowerCase();
-      if (!normalizedSkill) {
-        const firstSkill = Object.keys(parsedSheet.skills)[0];
-        if (firstSkill) {
-          elements.rollSkill.value = firstSkill;
-        }
-      }
-    }
   }
 
   function renderAllyModifierSelectors() {
@@ -1028,6 +1613,8 @@
       elements.injuryEntitySelect.value = entries[0].value;
     }
 
+    elements.injuryCard.classList.toggle("tt-hidden", !isAuthenticated());
+    elements.injuryRoll.disabled = entries.length === 0;
     elements.dmToolsCard.classList.toggle("tt-hidden", !isDm());
   }
 
@@ -1051,8 +1638,23 @@
       if (entry.type === "roll" && entry.details && entry.details.roll && entry.details.roll.d20) {
         const rollLine = document.createElement("div");
         rollLine.className = "tt-log-meta";
-        rollLine.textContent = `d20s: ${entry.details.roll.d20.dice.join(", ")} | selected ${entry.details.roll.d20.selected} | total ${entry.details.roll.total}`;
+        const rollData = entry.details.roll;
+        const groups = Array.isArray(rollData.d20.groups) ? rollData.d20.groups : [];
+        const groupText = groups.length > 1
+          ? `groups: ${groups
+            .map((group, index) => `#${index + 1}[${group.dice.join(",")}]=>${group.selected}`)
+            .join(" | ")}`
+          : `d20s: ${rollData.d20.dice.join(", ")}`;
+        rollLine.textContent = `${groupText} | selected ${rollData.d20.selected} | total ${rollData.total}`;
         block.appendChild(rollLine);
+
+        if (rollData.isdcCheck && rollData.isdcCheck.required) {
+          const isdcLine = document.createElement("div");
+          isdcLine.className = "tt-log-meta";
+          isdcLine.textContent =
+            `ISDC check: ${rollData.isdcCheck.total}/${rollData.isdcCheck.dc} (${rollData.isdcCheck.passed ? "pass" : "fail"})`;
+          block.appendChild(isdcLine);
+        }
       }
 
       elements.logEntries.appendChild(block);
@@ -1109,12 +1711,18 @@
   function selectedSelfModifierPayloads() {
     const payloads = [];
     state.checkedSelfModifiers.forEach((modifierId) => {
-      const entry = { id: modifierId, external: false };
-      if (modifierId === "fortune_over_finesse") {
-        entry.sacrificedTens = Number.parseInt(elements.rollFortuneTens.value, 10) || 0;
+      if (HIDDEN_SELF_MODIFIERS.has(modifierId)) {
+        return;
       }
+      const entry = { id: modifierId, external: false };
       if (modifierId === "portent") {
-        entry.portentValue = Number.parseInt(elements.rollPortentValue.value, 10) || 0;
+        const typed = window.prompt("Portent die value (1-20):", "10");
+        const value = Number.parseInt(typed || "", 10);
+        if (!Number.isFinite(value) || value < 1 || value > 20) {
+          setStatus("Portent requires a value from 1 to 20.", true);
+          return;
+        }
+        entry.portentValue = value;
       }
       payloads.push(entry);
     });
@@ -1161,8 +1769,66 @@
     localStorage.removeItem(STORAGE_SESSION_KEY);
   });
 
+  if (elements.characterSelect) {
+    elements.characterSelect.addEventListener("change", () => {
+      const selectedId = elements.characterSelect.value;
+      if (!selectedId) {
+        state.selectedCharacterId = null;
+        resetCharacterForm();
+        return;
+      }
+      selectCharacterById(selectedId, isDm() ? characters() : ownCharacters(), true);
+    });
+  }
+
+  if (elements.characterNewButton) {
+    elements.characterNewButton.addEventListener("click", () => {
+      state.selectedCharacterId = null;
+      state.pendingCharacterSelection = null;
+      if (elements.characterSelect) {
+        elements.characterSelect.value = "";
+      }
+      resetCharacterForm();
+    });
+  }
+
+  if (elements.characterRefreshButton) {
+    elements.characterRefreshButton.addEventListener("click", () => {
+      const characterId = elements.characterId.value || state.selectedCharacterId || "";
+      if (!characterId) {
+        setStatus("Select a saved character first.", true);
+        return;
+      }
+      emit("character:refresh", { id: characterId });
+      setStatus("Refreshing character sheet...");
+    });
+  }
+
+  if (elements.characterTokenFile) {
+    elements.characterTokenFile.addEventListener("change", async () => {
+      const file = elements.characterTokenFile.files && elements.characterTokenFile.files[0];
+      if (!file) {
+        return;
+      }
+      try {
+        const imageDataUrl = await readFileAsDataUrl(file);
+        elements.characterTokenImage.value = imageDataUrl;
+        setStatus(`Loaded token file: ${file.name}`);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    });
+  }
+
   elements.characterForm.addEventListener("submit", (event) => {
     event.preventDefault();
+    state.pendingCharacterSelection = {
+      id: elements.characterId.value || null,
+      name: normalizeLabel(elements.characterName.value),
+      ownerUserId: userId(),
+      submittedAt: Date.now(),
+    };
+    state.selectedCharacterId = elements.characterId.value || state.selectedCharacterId || null;
     emit("character:save", {
       id: elements.characterId.value || undefined,
       name: elements.characterName.value,
@@ -1174,7 +1840,6 @@
       strengthModifier: elements.characterStrengthMod.value,
       italicizedSkillDc: elements.characterIsdc.value,
     });
-    resetCharacterForm();
   });
 
   elements.statblockForm.addEventListener("submit", (event) => {
@@ -1286,14 +1951,16 @@
   });
 
   elements.rollEntitySelect.addEventListener("change", () => {
+    state.checkedSelfModifiers.clear();
+    state.checkedApprovedModifierIds.clear();
+    state.lastRollSkillKey = null;
+    renderRollSkillOptions();
     renderRollModifiers();
   });
 
-  elements.rollType.addEventListener("change", () => {
-    renderRollModifiers();
-  });
-
-  elements.rollSkill.addEventListener("input", () => {
+  elements.rollSkillSelect.addEventListener("change", () => {
+    state.lastRollSkillKey = null;
+    syncRollSkillContext();
     renderRollModifiers();
   });
 
@@ -1308,8 +1975,8 @@
       targetUserId,
       modifierId,
       context: {
-        skillName: elements.rollSkill.value,
-        rollType: elements.rollType.value,
+        skillName: elements.rollSkillSelect.value,
+        rollType: rollContextValue(),
       },
     });
     setStatus(`Requested ${modifierId} from ally.`);
@@ -1326,17 +1993,18 @@
       setStatus("Select who is rolling first.", true);
       return;
     }
+    if (!elements.rollSkillSelect.value) {
+      setStatus("Select a skill to roll.", true);
+      return;
+    }
 
     const payload = {
       ...entityPayload,
-      skillName: elements.rollSkill.value,
-      rollType: elements.rollType.value,
+      skillName: elements.rollSkillSelect.value,
+      rollType: rollContextValue(),
       advantageLevel: Number.parseInt(elements.rollAdvantage.value, 10) || 0,
-      flatModifier: Number.parseInt(elements.rollFlatModifier.value, 10) || 0,
-      bonusOverride:
-        elements.rollBonusOverride.value === ""
-          ? undefined
-          : Number.parseInt(elements.rollBonusOverride.value, 10) || 0,
+      flatModifier: Number.parseInt(elements.rollBonusOverride.value, 10) || 0,
+      bonusOverride: Number.parseInt(elements.rollSkillModifier.value, 10) || 0,
       modifiers: [...selectedSelfModifierPayloads(), ...selectedApprovedModifierPayloads()],
       approvalIds: selectedApprovalIds(),
       targetDieIndexForReroll: Number.parseInt(elements.rollTargetDieIndex.value, 10) || 0,
@@ -1362,7 +2030,7 @@
     }
     emit("roll:groupRequest", {
       skillName,
-      rollType: elements.rollType.value,
+      rollType: deriveRollTypeFromSkill(skillName),
     });
   });
 
@@ -1475,22 +2143,31 @@
     if (!roll) {
       return;
     }
-    const diceText = roll.d20 && Array.isArray(roll.d20.dice) ? roll.d20.dice.join(", ") : "-";
+    const groups = roll.d20 && Array.isArray(roll.d20.groups) ? roll.d20.groups : [];
+    const diceText = groups.length > 1
+      ? groups
+        .map((group, index) => `#${index + 1}[${group.dice.join(",")}]=>${group.selected}`)
+        .join(" | ")
+      : roll.d20 && Array.isArray(roll.d20.dice)
+        ? roll.d20.dice.join(", ")
+        : "-";
     const guidanceText = Array.isArray(roll.guidingDice) && roll.guidingDice.length > 0
       ? ` | extra: ${roll.guidingDice.map((entry) => `${entry.type}:${entry.roll}`).join(", ")}`
       : "";
+    const fofText =
+      roll.fortuneOverFinesse && roll.fortuneOverFinesse.enabled
+        ? ` | FoF groups: +${roll.fortuneOverFinesse.extraGroups}`
+        : "";
     const isdcText =
       roll.isdcCheck && roll.isdcCheck.required
         ? ` | ISDC ${roll.isdcCheck.passed ? "pass" : "fail"} (${roll.isdcCheck.total}/${roll.isdcCheck.dc})`
         : "";
     elements.rollResult.textContent =
-      `${payload.entityName}: ${roll.total} | d20s: ${diceText}${guidanceText}${isdcText}`;
+      `${payload.entityName}: ${roll.total} | d20: ${diceText}${fofText}${guidanceText}${isdcText}`;
   });
 
   socket.on("roll:groupRequested", (payload) => {
     setStatus(`${payload.requestedBy} requested: ${payload.skillName}`, false);
-    elements.rollSkill.value = payload.skillName;
-    elements.rollType.value = payload.rollType;
 
     if (Array.isArray(payload.characterOptions) && payload.characterOptions.length > 0) {
       const first = payload.characterOptions[0];
@@ -1499,6 +2176,8 @@
         elements.rollEntitySelect.value = wantedValue;
       }
     }
+    state.lastRollSkillKey = null;
+    renderRollSkillOptions(payload.skillName, payload.rollType);
     renderRollModifiers();
   });
 

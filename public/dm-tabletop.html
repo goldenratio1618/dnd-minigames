@@ -35,22 +35,59 @@
 
         <section class="tt-card" id="character-card">
           <h2>Characters</h2>
+          <div class="tt-grid2">
+            <select id="character-select"></select>
+            <button id="character-new-button" type="button">New</button>
+          </div>
+          <div id="character-token-preview" class="tt-token-preview">
+            <div id="character-token-badge" class="tt-token-badge">?</div>
+            <div id="character-token-label" class="tt-token-label">No token selected</div>
+          </div>
+          <div id="character-stats-summary" class="tt-stat-grid"></div>
+          <details id="character-stats-details">
+            <summary>Expanded Stats</summary>
+            <div id="character-stats-detail-grid" class="tt-stat-grid"></div>
+          </details>
           <div id="character-list" class="tt-list"></div>
           <form id="character-form" class="tt-form">
             <input id="character-id" type="hidden" />
+            <label class="tt-field" for="character-name">Character Name</label>
             <input id="character-name" type="text" placeholder="Character name" />
+            <label class="tt-field" for="character-sheet-url">Character Sheet URL</label>
             <input id="character-sheet-url" type="url" placeholder="Character sheet URL" />
+            <label class="tt-field" for="character-feats-text">Manual Feats (optional)</label>
             <textarea id="character-feats-text" placeholder="Optional feats (one per line)"></textarea>
+            <label class="tt-field" for="character-token-image">Token URL/Data URI (optional)</label>
             <input id="character-token-image" type="text" placeholder="Token URL or data URI" />
+            <label class="tt-field" for="character-token-file">Token File Upload</label>
+            <input id="character-token-file" type="file" accept="image/*" />
+            <details>
+              <summary>Advanced Overrides</summary>
+              <div class="tt-grid2">
+                <div>
+                  <label class="tt-field" for="character-speed">Speed</label>
+                  <input id="character-speed" type="number" placeholder="Speed" />
+                </div>
+                <div>
+                  <label class="tt-field" for="character-max-hp">Max HP</label>
+                  <input id="character-max-hp" type="number" placeholder="Max HP" />
+                </div>
+              </div>
+              <div class="tt-grid2">
+                <div>
+                  <label class="tt-field" for="character-strength-mod">Strength Modifier</label>
+                  <input id="character-strength-mod" type="number" placeholder="Strength modifier" />
+                </div>
+                <div>
+                  <label class="tt-field" for="character-isdc">Italicized Skill DC (ISDC)</label>
+                  <input id="character-isdc" type="number" placeholder="Italicized Skill DC" />
+                </div>
+              </div>
+            </details>
             <div class="tt-grid2">
-              <input id="character-speed" type="number" placeholder="Speed" />
-              <input id="character-max-hp" type="number" placeholder="Max HP" />
+              <button type="submit">Save Character</button>
+              <button id="character-refresh-button" type="button">Refresh Sheet</button>
             </div>
-            <div class="tt-grid2">
-              <input id="character-strength-mod" type="number" placeholder="Strength mod" />
-              <input id="character-isdc" type="number" placeholder="Italicized Skill DC" />
-            </div>
-            <button type="submit">Save Character</button>
           </form>
         </section>
 
@@ -153,27 +190,26 @@
         <section class="tt-card" id="roll-card">
           <h2>Skill Rolls</h2>
           <form id="roll-form" class="tt-form">
+            <label class="tt-field" for="roll-entity-select">Rolling Character</label>
             <select id="roll-entity-select"></select>
-            <input id="roll-skill" type="text" placeholder="Skill (e.g. Stealth)" />
-            <select id="roll-type">
-              <option value="minor_skill">Minor Skill</option>
-              <option value="major_skill">Major Skill</option>
-              <option value="attack">Attack</option>
-              <option value="saving_throw">Saving Throw</option>
-              <option value="beseech_the_gods">Beseech the Gods</option>
-              <option value="prepared_prayer">Prepared Prayer</option>
-              <option value="constitution_check">Constitution Check</option>
-              <option value="resistive_willpower">Resistive Willpower</option>
-            </select>
-            <div class="tt-grid2">
-              <input id="roll-advantage" type="number" min="-5" max="5" value="0" placeholder="Adv/Dis Level" />
-              <input id="roll-flat-modifier" type="number" value="0" placeholder="Flat modifier" />
+            <label class="tt-field" for="roll-skill-select">Skill</label>
+            <select id="roll-skill-select"></select>
+            <div class="tt-row">
+              <label>Roll Context</label>
+              <div id="roll-type-display" class="tt-inline-value">major_skill</div>
             </div>
             <div class="tt-grid2">
-              <input id="roll-fortune-tens" type="number" min="0" max="6" value="0" placeholder="Fortune +d20 count" />
-              <input id="roll-target-die-index" type="number" min="0" value="0" placeholder="Target die index" />
+              <div>
+                <label class="tt-field" for="roll-advantage">Advantage/Disadvantage Level</label>
+                <input id="roll-advantage" type="number" min="-5" max="5" value="0" />
+              </div>
+              <div>
+                <label class="tt-field" for="roll-skill-modifier">Skill Modifier</label>
+                <input id="roll-skill-modifier" type="number" value="0" />
+              </div>
             </div>
-            <input id="roll-portent-value" type="number" min="1" max="20" placeholder="Portent die (optional)" />
+            <label class="tt-field" for="roll-target-die-index">Target Die Index</label>
+            <input id="roll-target-die-index" type="number" min="0" value="0" />
             <div class="tt-grid2">
               <select id="roll-shifting-mode">
                 <option value="add">Shifting Fortunes: +d6</option>
@@ -184,7 +220,8 @@
                 Miracle Worker (-10, +1d20)
               </label>
             </div>
-            <input id="roll-bonus-override" type="number" placeholder="Bonus override (optional)" />
+            <label class="tt-field" for="roll-bonus-override">Other Flat Modifier (Optional)</label>
+            <input id="roll-bonus-override" type="number" value="0" />
             <div id="roll-modifier-list" class="tt-list"></div>
             <details>
               <summary>Request Ally Modifier</summary>
@@ -198,6 +235,22 @@
             <button type="submit">Confirm Roll</button>
           </form>
           <div id="roll-result" class="tt-result"></div>
+        </section>
+
+        <section class="tt-card" id="injury-card">
+          <h2>Injury Rolls</h2>
+          <div class="tt-grid2">
+            <div>
+              <label class="tt-field" for="injury-entity-select">Character / NPC</label>
+              <select id="injury-entity-select"></select>
+            </div>
+            <div>
+              <label class="tt-field" for="injury-overkill">Overkill Damage</label>
+              <input id="injury-overkill" type="number" min="0" value="0" />
+            </div>
+          </div>
+          <button id="injury-roll" type="button">Roll Injury Checks</button>
+          <div id="injury-result" class="tt-result"></div>
         </section>
 
         <section class="tt-card tt-hidden" id="dm-tools-card">
@@ -223,15 +276,6 @@
             <button id="initiative-next" type="button">Next Turn</button>
           </div>
           <button id="initiative-stop" type="button">End Initiative</button>
-
-          <div class="tt-divider"></div>
-
-          <div class="tt-grid2">
-            <select id="injury-entity-select"></select>
-            <input id="injury-overkill" type="number" min="0" value="0" placeholder="Overkill" />
-          </div>
-          <button id="injury-roll" type="button">Roll Injury Checks</button>
-          <div id="injury-result" class="tt-result"></div>
         </section>
       </aside>
 
