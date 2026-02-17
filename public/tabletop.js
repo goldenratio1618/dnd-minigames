@@ -19,6 +19,13 @@
     registerPassword: document.getElementById("register-password"),
     registerRole: document.getElementById("register-role"),
     registerDmCode: document.getElementById("register-dm-code"),
+    menuToggle: document.getElementById("menu-toggle"),
+    menuButtons: document.getElementById("menu-buttons"),
+    menuAccount: document.getElementById("menu-account"),
+    menuCharacter: document.getElementById("menu-character"),
+    menuRolls: document.getElementById("menu-rolls"),
+    menuLog: document.getElementById("menu-log"),
+    menuUtilities: document.getElementById("menu-utilities"),
 
     characterCard: document.getElementById("character-card"),
     characterSelect: document.getElementById("character-select"),
@@ -82,8 +89,11 @@
     rollTypeDisplay: document.getElementById("roll-type-display"),
     rollAdvantage: document.getElementById("roll-advantage"),
     rollSkillModifier: document.getElementById("roll-skill-modifier"),
+    rollTargetDieWrap: document.getElementById("roll-target-die-wrap"),
     rollTargetDieIndex: document.getElementById("roll-target-die-index"),
+    rollShiftingWrap: document.getElementById("roll-shifting-wrap"),
     rollShiftingMode: document.getElementById("roll-shifting-mode"),
+    rollMiracleWrap: document.getElementById("roll-miracle-wrap"),
     rollUseMiracle: document.getElementById("roll-use-miracle"),
     rollBonusOverride: document.getElementById("roll-bonus-override"),
     rollModifierList: document.getElementById("roll-modifier-list"),
@@ -126,6 +136,7 @@
     selectedCharacterId: null,
     pendingCharacterSelection: null,
     lastRollSkillKey: null,
+    activeMenu: "character",
     checkedSelfModifiers: new Set(),
     checkedApprovedModifierIds: new Set(),
     approvedModifierEntries: [],
@@ -345,12 +356,13 @@
     };
 
     const summaryPairs = [
+      { key: "Level", value: statValue("level") },
       { key: "Current HP", value: statValue("current hp", "hp") },
       { key: "Current Mana", value: statValue("current mana", "mana") },
       { key: "Humility", value: statValue("humility") },
       { key: "DR", value: statValue("dr") },
       { key: "AC", value: statValue("ac") },
-      { key: "Speed", value: Number.isFinite(Number(parsed.speed)) ? Number(parsed.speed) : statValue("speed") },
+      { key: "Speed", value: statValue("speed") || parsed.speed },
     ];
     renderStatGrid(elements.characterStatsSummary, summaryPairs);
 
@@ -365,6 +377,7 @@
       "hp",
       "current mana",
       "mana",
+      "level",
       "humility",
       "dr",
       "ac",
@@ -455,12 +468,59 @@
       elements.authStatus.textContent = `${current.username} (${current.role})`;
       elements.authForms.classList.add("tt-hidden");
       elements.logoutButton.classList.remove("tt-hidden");
+      if (state.activeMenu === "account" && isAuthenticated()) {
+        state.activeMenu = "character";
+      }
     } else {
       elements.authStatus.textContent = "Not logged in";
       elements.authForms.classList.remove("tt-hidden");
       elements.logoutButton.classList.add("tt-hidden");
       const defaultRole = document.body.dataset.defaultRole === "dm" ? "dm" : "player";
       elements.registerRole.value = defaultRole;
+      state.activeMenu = "account";
+    }
+  }
+
+  function menuButtonsList() {
+    return [
+      elements.menuAccount,
+      elements.menuCharacter,
+      elements.menuRolls,
+      elements.menuLog,
+      elements.menuUtilities,
+    ].filter(Boolean);
+  }
+
+  function setActiveMenu(menuKey) {
+    state.activeMenu = menuKey;
+    applyMenuVisibility();
+  }
+
+  function applyMenuVisibility() {
+    const panel = state.activeMenu || "character";
+    const panelElements = document.querySelectorAll("[data-menu-panel]");
+    panelElements.forEach((node) => {
+      if (!(node instanceof HTMLElement)) {
+        return;
+      }
+      const target = node.getAttribute("data-menu-panel");
+      const shouldShow = target === panel;
+      node.classList.toggle("tt-menu-hidden", !shouldShow);
+    });
+
+    if (elements.menuButtons) {
+      menuButtonsList().forEach((button) => {
+        if (!button) {
+          return;
+        }
+        const buttonPanel = button.id.replace("menu-", "");
+        button.classList.toggle("active", buttonPanel === panel);
+      });
+    }
+
+    if (panel !== "log" && elements.logPanel) {
+      elements.logPanel.classList.remove("minimized");
+      elements.logToggle.textContent = "Minimize";
     }
   }
 
@@ -1401,7 +1461,12 @@
       elements.rollEntitySelect.appendChild(option);
     });
 
-    if (options.some((entry) => entry.value === currentValue)) {
+    const preferredCharacter = state.selectedCharacterId
+      ? `character:${state.selectedCharacterId}`
+      : "";
+    if (preferredCharacter && options.some((entry) => entry.value === preferredCharacter)) {
+      elements.rollEntitySelect.value = preferredCharacter;
+    } else if (options.some((entry) => entry.value === currentValue)) {
       elements.rollEntitySelect.value = currentValue;
     } else if (options.length > 0) {
       elements.rollEntitySelect.value = options[0].value;
@@ -1419,6 +1484,7 @@
     const catalog = mapOfModifierCatalog();
 
     const keepChecked = new Set();
+    const visibleModifierIds = new Set();
 
     elements.rollModifierList.innerHTML = "";
     selfModifiers.forEach((modifierId) => {
@@ -1429,11 +1495,14 @@
       if (!doesModifierApply(meta, rollType, skillName)) {
         return;
       }
+      visibleModifierIds.add(modifierId);
       const row = document.createElement("label");
       row.className = "tt-list-item";
 
       const left = document.createElement("span");
-      left.textContent = meta ? `${modifierId} - ${meta.phase}` : modifierId;
+      const featLabel =
+        meta && Array.isArray(meta.featNames) && meta.featNames[0] ? meta.featNames[0] : modifierId;
+      left.textContent = meta ? `${featLabel} (${meta.phase})` : modifierId;
       row.appendChild(left);
 
       const checkbox = document.createElement("input");
@@ -1448,6 +1517,7 @@
         } else {
           state.checkedSelfModifiers.delete(modifierId);
         }
+        updateConditionalRollControls(visibleModifierIds);
       });
       row.appendChild(checkbox);
 
@@ -1463,10 +1533,15 @@
       if (!doesModifierApply(meta, rollType, skillName)) {
         return;
       }
+      visibleModifierIds.add(entry.modifierId);
       const row = document.createElement("label");
       row.className = "tt-list-item";
       const text = document.createElement("span");
-      text.textContent = `${entry.modifierId} (approved by ${entry.byUsername})`;
+      const featLabel =
+        meta && Array.isArray(meta.featNames) && meta.featNames[0]
+          ? meta.featNames[0]
+          : entry.modifierId;
+      text.textContent = `${featLabel} (approved by ${entry.byUsername})`;
       row.appendChild(text);
 
       const checkbox = document.createElement("input");
@@ -1481,6 +1556,7 @@
         } else {
           state.checkedApprovedModifierIds.delete(entry.approvalId);
         }
+        updateConditionalRollControls(visibleModifierIds);
       });
       row.appendChild(checkbox);
 
@@ -1500,7 +1576,53 @@
     });
     state.checkedApprovedModifierIds = keepApproved;
 
+    updateConditionalRollControls(visibleModifierIds);
     renderAllyModifierSelectors();
+  }
+
+  function updateConditionalRollControls(visibleModifierIds) {
+    const visible = visibleModifierIds instanceof Set ? visibleModifierIds : new Set();
+    const selectedModifierIds = new Set();
+
+    state.checkedSelfModifiers.forEach((modifierId) => {
+      if (visible.has(modifierId)) {
+        selectedModifierIds.add(modifierId);
+      }
+    });
+    state.approvedModifierEntries.forEach((entry) => {
+      if (!entry || !state.checkedApprovedModifierIds.has(entry.approvalId)) {
+        return;
+      }
+      if (visible.has(entry.modifierId)) {
+        selectedModifierIds.add(entry.modifierId);
+      }
+    });
+
+    const showMiracleSettings = selectedModifierIds.has("miracle_worker");
+    const showShiftingSettings = selectedModifierIds.has("shifting_fortunes");
+    const needsTargetDie =
+      selectedModifierIds.has("inspired_by_the_gods") || selectedModifierIds.has("small_fortunes");
+
+    if (elements.rollMiracleWrap) {
+      elements.rollMiracleWrap.classList.toggle("tt-hidden", !showMiracleSettings);
+    }
+    if (!showMiracleSettings && elements.rollUseMiracle) {
+      elements.rollUseMiracle.checked = false;
+    }
+
+    if (elements.rollShiftingWrap) {
+      elements.rollShiftingWrap.classList.toggle("tt-hidden", !showShiftingSettings);
+    }
+    if (!showShiftingSettings && elements.rollShiftingMode) {
+      elements.rollShiftingMode.value = "add";
+    }
+
+    if (elements.rollTargetDieWrap) {
+      elements.rollTargetDieWrap.classList.toggle("tt-hidden", !needsTargetDie);
+    }
+    if (!needsTargetDie && elements.rollTargetDieIndex) {
+      elements.rollTargetDieIndex.value = "0";
+    }
   }
 
   function renderAllyModifierSelectors() {
@@ -1691,6 +1813,7 @@
     renderMapGrid();
     renderLogs();
     renderMapAndInitiativeSummary();
+    applyMenuVisibility();
   }
 
   function parseEntitySelectionForPayload(selectValue) {
@@ -1768,6 +1891,28 @@
     emit("auth:logout");
     localStorage.removeItem(STORAGE_SESSION_KEY);
   });
+
+  if (elements.menuToggle) {
+    elements.menuToggle.addEventListener("click", () => {
+      elements.menuButtons.classList.toggle("tt-hidden");
+    });
+  }
+
+  if (elements.menuAccount) {
+    elements.menuAccount.addEventListener("click", () => setActiveMenu("account"));
+  }
+  if (elements.menuCharacter) {
+    elements.menuCharacter.addEventListener("click", () => setActiveMenu("character"));
+  }
+  if (elements.menuRolls) {
+    elements.menuRolls.addEventListener("click", () => setActiveMenu("rolls"));
+  }
+  if (elements.menuLog) {
+    elements.menuLog.addEventListener("click", () => setActiveMenu("log"));
+  }
+  if (elements.menuUtilities) {
+    elements.menuUtilities.addEventListener("click", () => setActiveMenu("utilities"));
+  }
 
   if (elements.characterSelect) {
     elements.characterSelect.addEventListener("change", () => {
@@ -1953,6 +2098,7 @@
   elements.rollEntitySelect.addEventListener("change", () => {
     state.checkedSelfModifiers.clear();
     state.checkedApprovedModifierIds.clear();
+    state.approvedModifierEntries = [];
     state.lastRollSkillKey = null;
     renderRollSkillOptions();
     renderRollModifiers();
@@ -2097,7 +2243,11 @@
   });
 
   socket.on("tabletop:error", (payload) => {
-    setStatus(payload && payload.message ? payload.message : "Unknown error", true);
+    const message = payload && payload.message ? payload.message : "Unknown error";
+    setStatus(message, true);
+    if (/uses remaining/i.test(message)) {
+      window.alert(message);
+    }
   });
 
   socket.on("tabletop:notice", (payload) => {

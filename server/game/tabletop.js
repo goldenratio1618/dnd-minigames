@@ -57,7 +57,7 @@ const ROLL_MODIFIER_CATALOG = {
     id: "in_tune_with_the_gods",
     featNames: ["In Tune With The Gods"],
     phase: "passive",
-    appliesTo: ["prepared_prayer"],
+    appliesTo: ["prepared_prayer", "beseech_the_gods"],
     description: "If a d20 is lower than 6, reroll that d20.",
     grantsTo: "self",
     requiresApproval: false,
@@ -84,7 +84,7 @@ const ROLL_MODIFIER_CATALOG = {
     id: "fortune_over_finesse",
     featNames: ["Fortune over Finesse"],
     phase: "pre",
-    appliesTo: ["minor_skill", "major_skill", "any_skill"],
+    appliesTo: ["minor_skill", "major_skill", "any_skill", "beseech_the_gods", "prepared_prayer"],
     description: "For each +10 bonus sacrificed, roll one additional d20.",
     grantsTo: "self",
     requiresApproval: false,
@@ -419,6 +419,7 @@ function parseCharacterFromSheetRows(statsRows, featRows) {
     skills: {},
     feats: [],
     currentValues: {},
+    currentValueMeta: {},
     italicizedSkillDc: 0,
     strengthModifier: 0,
     speed: 30,
@@ -428,20 +429,50 @@ function parseCharacterFromSheetRows(statsRows, featRows) {
     beseechBonus: 0,
   };
 
+  let inExpandedStats = true;
+
   for (let i = 0; i < statsRows.length; i += 1) {
     const row = statsRows[i] || [];
     const label = normalizeSkillName(row[0]);
-    const baseValue = parseSheetCellValue(row[1]);
-    const currentValue = parseSheetCellValue(row[3]);
-    const rowValue = currentValue !== "" ? currentValue : baseValue;
+    const rowNumber = i + 1;
+    const baseRaw = normalizeSheetCellText(row[1]);
+    const currentRaw = normalizeSheetCellText(row[3]);
+    const baseValue = parseSheetCellValue(baseRaw);
+    const currentValue = parseSheetCellValue(currentRaw);
 
-    if (label && rowValue !== "") {
-      result.currentValues[label] = rowValue;
-      if (label === "hp") {
-        result.currentValues["current hp"] = rowValue;
-      } else if (label === "mana") {
-        result.currentValues["current mana"] = rowValue;
+    if (label === "attributes") {
+      inExpandedStats = false;
+    }
+
+    if (inExpandedStats && label) {
+      let displayValue = baseRaw;
+      if (label !== "level" && baseRaw && currentRaw) {
+        displayValue = `${currentRaw} / ${baseRaw}`;
       }
+      if (displayValue !== "") {
+        result.currentValues[label] = displayValue;
+      }
+      result.currentValueMeta[label] = {
+        key: label,
+        rowNumber,
+        baseRaw,
+        currentRaw,
+        baseValue,
+        currentValue,
+        displayValue: displayValue || "",
+        hasCurrent: currentRaw !== "",
+        hasBase: baseRaw !== "",
+        bCell: `B${rowNumber}`,
+        dCell: `D${rowNumber}`,
+      };
+      if (label === "hp") {
+        result.currentValues["current hp"] = displayValue || "";
+        result.currentValueMeta["current hp"] = result.currentValueMeta[label];
+      } else if (label === "mana") {
+        result.currentValues["current mana"] = displayValue || "";
+        result.currentValueMeta["current mana"] = result.currentValueMeta[label];
+      }
+
     }
 
     if (label === "italicized skill dc") {
@@ -473,27 +504,89 @@ function parseCharacterFromSheetRows(statsRows, featRows) {
     }
   }
 
-  featRows.forEach((row, index) => {
-    if (index === 0) {
-      return;
+  const seenFeats = new Set();
+  let foundAnyFeat = false;
+  for (let i = 1; i < featRows.length; i += 1) {
+    const row = featRows[i] || [];
+    const featName = String(row[0] || "").trim();
+    if (!featName) {
+      if (foundAnyFeat) {
+        break;
+      }
+      continue;
     }
-    const featName = String((row && row[0]) || "").trim();
-    if (featName) {
-      result.feats.push(featName);
+    foundAnyFeat = true;
+    const token = normalizeCounterToken(featName);
+    if (!token || seenFeats.has(token)) {
+      continue;
     }
-  });
+    seenFeats.add(token);
+    result.feats.push(featName);
+  }
 
   if (result.currentValues.speed === undefined) {
     result.currentValues.speed = result.speed;
+    result.currentValueMeta.speed = {
+      key: "speed",
+      rowNumber: null,
+      baseRaw: String(result.speed),
+      currentRaw: "",
+      baseValue: result.speed,
+      currentValue: "",
+      displayValue: String(result.speed),
+      hasCurrent: false,
+      hasBase: true,
+      bCell: null,
+      dCell: null,
+    };
   }
   if (result.currentValues["max hp"] === undefined) {
     result.currentValues["max hp"] = result.maxHp;
+    result.currentValueMeta["max hp"] = {
+      key: "max hp",
+      rowNumber: null,
+      baseRaw: String(result.maxHp),
+      currentRaw: "",
+      baseValue: result.maxHp,
+      currentValue: "",
+      displayValue: String(result.maxHp),
+      hasCurrent: false,
+      hasBase: true,
+      bCell: null,
+      dCell: null,
+    };
   }
   if (result.currentValues["strength mod"] === undefined) {
     result.currentValues["strength mod"] = result.strengthModifier;
+    result.currentValueMeta["strength mod"] = {
+      key: "strength mod",
+      rowNumber: null,
+      baseRaw: String(result.strengthModifier),
+      currentRaw: "",
+      baseValue: result.strengthModifier,
+      currentValue: "",
+      displayValue: String(result.strengthModifier),
+      hasCurrent: false,
+      hasBase: true,
+      bCell: null,
+      dCell: null,
+    };
   }
   if (result.currentValues.isdc === undefined) {
     result.currentValues.isdc = result.italicizedSkillDc;
+    result.currentValueMeta.isdc = {
+      key: "isdc",
+      rowNumber: null,
+      baseRaw: String(result.italicizedSkillDc),
+      currentRaw: "",
+      baseValue: result.italicizedSkillDc,
+      currentValue: "",
+      displayValue: String(result.italicizedSkillDc),
+      hasCurrent: false,
+      hasBase: true,
+      bCell: null,
+      dCell: null,
+    };
   }
 
   return result;
@@ -511,6 +604,64 @@ async function parseCharacterSheet(sheetUrl) {
   const statsRows = parseCsv(statsCsv);
   const featRows = parseCsv(featsCsv);
   return parseCharacterFromSheetRows(statsRows, featRows);
+}
+
+function normalizeCounterToken(text) {
+  return normalizeSkillName(text).replace(/[^a-z0-9]/g, "");
+}
+
+function findUsageCounterForModifier(parsedSheet, modifierId, definition) {
+  const meta = parsedSheet && parsedSheet.currentValueMeta && typeof parsedSheet.currentValueMeta === "object"
+    ? parsedSheet.currentValueMeta
+    : null;
+  if (!meta) {
+    return null;
+  }
+
+  const candidates = [];
+  if (definition && Array.isArray(definition.featNames)) {
+    candidates.push(...definition.featNames);
+  }
+  candidates.push(modifierId);
+  candidates.push(String(modifierId || "").replace(/_/g, " "));
+
+  const wantedTokens = candidates
+    .map((name) => normalizeCounterToken(name))
+    .filter(Boolean);
+
+  if (wantedTokens.length === 0) {
+    return null;
+  }
+
+  for (const [key, details] of Object.entries(meta)) {
+    const keyToken = normalizeCounterToken(key);
+    if (!keyToken) {
+      continue;
+    }
+    if (!details || !details.hasCurrent || !details.dCell) {
+      continue;
+    }
+    const matches = wantedTokens.some(
+      (token) => token === keyToken || token.includes(keyToken) || keyToken.includes(token)
+    );
+    if (!matches) {
+      continue;
+    }
+    const remainingNumeric = Number(details.currentValue);
+    if (!Number.isFinite(remainingNumeric)) {
+      continue;
+    }
+    return {
+      key,
+      rowNumber: details.rowNumber || null,
+      remainingNumeric,
+      dCell: details.dCell || null,
+      bCell: details.bCell || null,
+      hasCurrent: Boolean(details.hasCurrent),
+    };
+  }
+
+  return null;
 }
 
 function parseStatblockColumn(rows, columnName) {
@@ -579,6 +730,7 @@ function parseStatblockColumn(rows, columnName) {
         speed: normalizeNumber(byName.speed, 30),
         "max hp": Math.max(1, normalizeNumber(byName.hp, 1)),
       },
+      currentValueMeta: {},
       parsedAt: nowIso(),
     },
   };
@@ -952,6 +1104,7 @@ function parseManualStatblockText(text) {
     skills: {},
     feats: [],
     currentValues: {},
+    currentValueMeta: {},
     parsedAt: nowIso(),
     italicizedSkillDc: normalizeNumber(byKey["italicized skill dc"], 0),
     strengthModifier: normalizeNumber(byKey.strength, 0),
@@ -998,6 +1151,19 @@ function parseManualStatblockText(text) {
 
   Object.keys(byKey).forEach((key) => {
     stats.currentValues[key] = parseSheetCellValue(byKey[key]);
+    stats.currentValueMeta[key] = {
+      key,
+      rowNumber: null,
+      baseRaw: String(byKey[key]),
+      currentRaw: "",
+      baseValue: parseSheetCellValue(byKey[key]),
+      currentValue: "",
+      displayValue: String(parseSheetCellValue(byKey[key])),
+      hasCurrent: false,
+      hasBase: String(byKey[key]).trim() !== "",
+      bCell: null,
+      dCell: null,
+    };
   });
   if (stats.currentValues.speed === undefined) {
     stats.currentValues.speed = stats.speed;
@@ -1194,6 +1360,64 @@ function createTabletopSystem(io, options = {}) {
     herbs: [],
     error: null,
   };
+
+  function getSheetsAccessToken() {
+    return String(options.googleSheetsAccessToken || process.env.GOOGLE_SHEETS_ACCESS_TOKEN || "").trim();
+  }
+
+  async function updateSheetCellValue(sheetId, range, value) {
+    const token = getSheetsAccessToken();
+    if (!token) {
+      throw new Error("GOOGLE_SHEETS_ACCESS_TOKEN is not configured.");
+    }
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(
+      range
+    )}?valueInputOption=USER_ENTERED`;
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        range,
+        majorDimension: "ROWS",
+        values: [[String(value)]],
+      }),
+    });
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(`Sheet update failed (${response.status}): ${body.slice(0, 180)}`);
+    }
+  }
+
+  async function consumeCharacterUsageCounters(character, usageCounters) {
+    if (!character || !Array.isArray(usageCounters) || usageCounters.length === 0) {
+      return;
+    }
+    const sheetId = parseSheetIdFromUrl(character.sheetUrl);
+    if (!sheetId) {
+      throw new Error("Character sheet URL is invalid for usage updates.");
+    }
+
+    const consumable = usageCounters.filter(
+      (counter) => counter && counter.hasCurrent && counter.dCell && Number.isFinite(counter.remainingNumeric)
+    );
+    if (consumable.length === 0) {
+      return;
+    }
+
+    for (const counter of consumable) {
+      const nextValue = Math.max(0, Number(counter.remainingNumeric) - 1);
+      const range = `'Stats 🗡️'!${counter.dCell}`;
+      await updateSheetCellValue(sheetId, range, nextValue);
+    }
+
+    character.parsedSheet = await parseCharacterSheet(character.sheetUrl);
+    character.availableModifiers = computeAvailableModifiers(character);
+    character.updatedAt = nowIso();
+    character.sheetError = null;
+  }
 
   function appendLog(entry) {
     state.logs.push(entry);
@@ -1568,6 +1792,10 @@ function createTabletopSystem(io, options = {}) {
     advantageLevel = maybeConsumeBottledLuck(actorUser.id, normalizedSkill, rollType, advantageLevel);
 
     const actorFeats = new Set(parsed.feats || []);
+    const definitionById = new Map(
+      Object.values(ROLL_MODIFIER_CATALOG).map((definition) => [definition.id, definition])
+    );
+    const usageCountersByKey = new Map();
 
     let bonusPenalty = 0;
     let guidingDice = [];
@@ -1586,11 +1814,30 @@ function createTabletopSystem(io, options = {}) {
       }
 
       if (!isExternal) {
-        const definition = Object.values(ROLL_MODIFIER_CATALOG).find((entry) => entry.id === modifierId);
+        const definition = definitionById.get(modifierId);
         if (definition && definition.featNames.length > 0) {
           const hasFeat = definition.featNames.some((feat) => actorFeats.has(feat));
           if (!hasFeat) {
             continue;
+          }
+        }
+
+        const usageCounter = findUsageCounterForModifier(parsed, modifierId, definition || null);
+        if (usageCounter) {
+          if (usageCounter.remainingNumeric <= 0) {
+            const featLabel = definition && definition.featNames && definition.featNames[0]
+              ? definition.featNames[0]
+              : modifierId;
+            return {
+              ok: false,
+              error: `${featLabel} has 0 uses remaining.`,
+            };
+          }
+          if (!usageCountersByKey.has(usageCounter.key)) {
+            usageCountersByKey.set(usageCounter.key, {
+              ...usageCounter,
+              modifierId,
+            });
           }
         }
       }
@@ -1823,6 +2070,7 @@ function createTabletopSystem(io, options = {}) {
         externalModifiersUsed,
         isdcCheck,
       },
+      usageCountersToConsume: Array.from(usageCountersByKey.values()),
       logText: `${actorEntity.name} rolled ${skillName} (${rollType}) = ${total}`,
     };
   }
@@ -2717,7 +2965,7 @@ function createTabletopSystem(io, options = {}) {
       }
     });
 
-    socket.on("roll:skill", (payload) => {
+    socket.on("roll:skill", async (payload) => {
       if (!requireAuth(socket)) {
         return;
       }
@@ -2750,6 +2998,22 @@ function createTabletopSystem(io, options = {}) {
         entityName: result.actorEntity.name,
         roll: rollData,
       });
+
+      if (
+        result.actorEntity &&
+        result.actorEntity.sheetUrl &&
+        Array.isArray(result.usageCountersToConsume) &&
+        result.usageCountersToConsume.length > 0
+      ) {
+        try {
+          await consumeCharacterUsageCounters(result.actorEntity, result.usageCountersToConsume);
+          socket.emit("tabletop:notice", { message: "Feat usage updated from sheet." });
+        } catch (error) {
+          socket.emit("tabletop:error", {
+            message: `Could not update feat usage: ${error.message}`,
+          });
+        }
+      }
 
       persistence.saveSoon();
       broadcastSnapshots();

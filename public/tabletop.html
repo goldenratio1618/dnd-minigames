@@ -10,7 +10,18 @@
   <body data-default-role="player">
     <div id="tabletop-root" class="tt-root">
       <aside class="tt-left">
-        <section class="tt-card" id="auth-card">
+        <div class="tt-menu-shell">
+          <button id="menu-toggle" type="button" class="tt-menu-toggle">Menu</button>
+          <div id="menu-buttons" class="tt-menu-buttons tt-hidden">
+            <button id="menu-account" type="button" class="tt-menu-button" title="Account">A</button>
+            <button id="menu-character" type="button" class="tt-menu-button" title="Character">C</button>
+            <button id="menu-rolls" type="button" class="tt-menu-button" title="Skill Rolls">R</button>
+            <button id="menu-log" type="button" class="tt-menu-button" title="Session Log">L</button>
+            <button id="menu-utilities" type="button" class="tt-menu-button" title="Utilities">U</button>
+          </div>
+        </div>
+
+        <section class="tt-card tt-panel" id="auth-card" data-menu-panel="account">
           <h2>Account</h2>
           <div id="auth-status">Connecting...</div>
           <div id="auth-forms">
@@ -33,7 +44,7 @@
           <button id="logout-button" type="button" class="tt-hidden">Logout</button>
         </section>
 
-        <section class="tt-card" id="character-card">
+        <section class="tt-card tt-panel" id="character-card" data-menu-panel="character">
           <h2>Characters</h2>
           <div class="tt-grid2">
             <select id="character-select"></select>
@@ -61,29 +72,10 @@
             <input id="character-token-image" type="text" placeholder="Token URL or data URI" />
             <label class="tt-field" for="character-token-file">Token File Upload</label>
             <input id="character-token-file" type="file" accept="image/*" />
-            <details>
-              <summary>Advanced Overrides</summary>
-              <div class="tt-grid2">
-                <div>
-                  <label class="tt-field" for="character-speed">Speed</label>
-                  <input id="character-speed" type="number" placeholder="Speed" />
-                </div>
-                <div>
-                  <label class="tt-field" for="character-max-hp">Max HP</label>
-                  <input id="character-max-hp" type="number" placeholder="Max HP" />
-                </div>
-              </div>
-              <div class="tt-grid2">
-                <div>
-                  <label class="tt-field" for="character-strength-mod">Strength Modifier</label>
-                  <input id="character-strength-mod" type="number" placeholder="Strength modifier" />
-                </div>
-                <div>
-                  <label class="tt-field" for="character-isdc">Italicized Skill DC (ISDC)</label>
-                  <input id="character-isdc" type="number" placeholder="Italicized Skill DC" />
-                </div>
-              </div>
-            </details>
+            <input id="character-speed" type="hidden" />
+            <input id="character-max-hp" type="hidden" />
+            <input id="character-strength-mod" type="hidden" />
+            <input id="character-isdc" type="hidden" />
             <div class="tt-grid2">
               <button type="submit">Save Character</button>
               <button id="character-refresh-button" type="button">Refresh Sheet</button>
@@ -91,7 +83,7 @@
           </form>
         </section>
 
-        <section class="tt-card tt-hidden" id="statblock-card">
+        <section class="tt-card tt-hidden tt-panel" id="statblock-card" data-menu-panel="character">
           <h2>Statblocks (DM)</h2>
           <div id="statblock-list" class="tt-list"></div>
           <form id="statblock-form" class="tt-form">
@@ -111,7 +103,7 @@
           </form>
         </section>
 
-        <section class="tt-card tt-hidden" id="map-card">
+        <section class="tt-card tt-hidden tt-panel" id="map-card" data-menu-panel="character">
           <h2>Battlemaps (DM)</h2>
           <div class="tt-grid2">
             <select id="map-select"></select>
@@ -187,7 +179,7 @@
           </div>
         </section>
 
-        <section class="tt-card" id="roll-card">
+        <section class="tt-card tt-panel" id="roll-card" data-menu-panel="rolls">
           <h2>Skill Rolls</h2>
           <form id="roll-form" class="tt-form">
             <label class="tt-field" for="roll-entity-select">Rolling Character</label>
@@ -208,17 +200,24 @@
                 <input id="roll-skill-modifier" type="number" value="0" />
               </div>
             </div>
-            <label class="tt-field" for="roll-target-die-index">Target Die Index</label>
-            <input id="roll-target-die-index" type="number" min="0" value="0" />
+            <div id="roll-target-die-wrap" class="tt-hidden">
+              <label class="tt-field" for="roll-target-die-index">Target Die Index (for reroll feats)</label>
+              <input id="roll-target-die-index" type="number" min="0" value="0" />
+            </div>
             <div class="tt-grid2">
-              <select id="roll-shifting-mode">
-                <option value="add">Shifting Fortunes: +d6</option>
-                <option value="subtract">Shifting Fortunes: -d6</option>
-              </select>
-              <label class="tt-checkline">
-                <input id="roll-use-miracle" type="checkbox" />
-                Miracle Worker (-10, +1d20)
-              </label>
+              <div id="roll-shifting-wrap" class="tt-hidden">
+                <label class="tt-field" for="roll-shifting-mode">Shifting Fortunes Mode</label>
+                <select id="roll-shifting-mode">
+                  <option value="add">+d6</option>
+                  <option value="subtract">-d6</option>
+                </select>
+              </div>
+              <div id="roll-miracle-wrap" class="tt-hidden">
+                <label class="tt-checkline">
+                  <input id="roll-use-miracle" type="checkbox" />
+                  Miracle Worker (-10, +1d20)
+                </label>
+              </div>
             </div>
             <label class="tt-field" for="roll-bonus-override">Other Flat Modifier (Optional)</label>
             <input id="roll-bonus-override" type="number" value="0" />
@@ -237,7 +236,7 @@
           <div id="roll-result" class="tt-result"></div>
         </section>
 
-        <section class="tt-card" id="injury-card">
+        <section class="tt-card tt-panel" id="injury-card" data-menu-panel="utilities">
           <h2>Injury Rolls</h2>
           <div class="tt-grid2">
             <div>
@@ -253,7 +252,7 @@
           <div id="injury-result" class="tt-result"></div>
         </section>
 
-        <section class="tt-card tt-hidden" id="dm-tools-card">
+        <section class="tt-card tt-hidden tt-panel" id="dm-tools-card" data-menu-panel="utilities">
           <h2>DM Tools</h2>
           <div class="tt-grid2">
             <select id="forage-terrain">
@@ -289,7 +288,7 @@
         </section>
       </main>
 
-      <aside class="tt-right" id="log-panel">
+      <aside class="tt-right" id="log-panel" data-menu-panel="log">
         <div class="tt-log-header">
           <h2>Session Log</h2>
           <button id="log-toggle" type="button">Minimize</button>
