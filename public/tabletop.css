@@ -34,14 +34,70 @@ body {
 
 .tt-root {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) 1fr minmax(260px, 340px);
+  grid-template-columns: 64px minmax(280px, 360px) 1fr minmax(240px, 320px);
+  grid-template-areas: "rail left main right";
   gap: 12px;
   min-height: 100vh;
   padding: 12px;
 }
 
-.tt-left,
-.tt-right {
+.tt-mode-rail {
+  grid-area: rail;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(160deg, #141b19, #0f1513);
+}
+
+.tt-rail-divider {
+  width: 38px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.2);
+  margin: 2px 0;
+}
+
+.tt-rail-button {
+  width: 44px;
+  height: 44px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 12px;
+  background: rgba(8, 11, 10, 0.58);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+.tt-rail-button img {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.tt-rail-button.active {
+  border-color: rgba(217, 164, 65, 0.85);
+  box-shadow: 0 0 0 1px rgba(217, 164, 65, 0.35);
+  background: rgba(30, 36, 34, 0.9);
+}
+
+.tt-hamburger {
+  display: grid;
+  gap: 4px;
+}
+
+.tt-hamburger span {
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+  background: #d7d8d8;
+}
+
+.tt-left {
+  grid-area: left;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -50,10 +106,24 @@ body {
 }
 
 .tt-main {
+  grid-area: main;
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+}
+
+.tt-right {
+  grid-area: right;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: linear-gradient(160deg, #19211f, #111816);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  overflow: hidden;
+  max-height: calc(100vh - 24px);
 }
 
 .tt-main-header {
@@ -90,35 +160,39 @@ body {
   color: var(--muted);
 }
 
-.tt-menu-shell {
-  display: grid;
-  gap: 6px;
-}
-
-.tt-menu-toggle {
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: 10px;
-  padding: 8px 10px;
-  background: rgba(7, 10, 9, 0.7);
-  color: var(--text);
-  cursor: pointer;
-}
-
 .tt-menu-buttons {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: 1fr;
   gap: 6px;
 }
 
 .tt-menu-button {
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 8px;
-  padding: 6px 8px;
+  padding: 8px 10px;
   background: rgba(7, 10, 9, 0.5);
   color: var(--muted);
   cursor: pointer;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  display: grid;
+  grid-template-columns: 20px 1fr;
+  align-items: center;
+  gap: 8px;
+  text-align: left;
+}
+
+.tt-menu-button img {
+  width: 20px;
+  height: 20px;
+  display: block;
+  border-radius: 4px;
+}
+
+.tt-menu-button span {
+  line-height: 1.1;
 }
 
 .tt-menu-button.active {
@@ -134,7 +208,13 @@ body {
   background: rgba(9, 12, 11, 0.8);
   flex: 1;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
+  cursor: default;
+}
+
+.tt-board.tt-panning {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .tt-grid {
@@ -151,6 +231,21 @@ body {
 .tt-grid-wrap {
   position: relative;
   width: max-content;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.tt-grid-wrap.tt-mode-paint .tt-token {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.tt-grid-wrap.tt-mode-paint .tt-grid-overlay {
+  pointer-events: none;
+}
+
+.tt-grid-wrap.tt-mode-measure .tt-grid-overlay {
+  pointer-events: none;
 }
 
 .tt-grid-overlay {
@@ -248,6 +343,36 @@ body {
 .tt-token-selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(217, 164, 65, 0.35);
+}
+
+.tt-measure-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.tt-measure-overlay line {
+  stroke: #f3c56e;
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.85));
+}
+
+.tt-measure-label {
+  position: absolute;
+  transform: translate(-50%, -130%);
+  pointer-events: none;
+  padding: 2px 6px;
+  border-radius: 7px;
+  border: 1px solid rgba(217, 164, 65, 0.75);
+  background: rgba(8, 11, 10, 0.9);
+  color: #f8deb2;
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .tt-token-name {
@@ -470,6 +595,11 @@ body {
   letter-spacing: 0.08em;
 }
 
+.tt-row.is-disabled label,
+.tt-row.is-disabled select {
+  opacity: 0.45;
+}
+
 .tt-checkline {
   display: flex;
   align-items: center;
@@ -498,13 +628,6 @@ body {
   color: var(--muted);
 }
 
-.tt-right {
-  background: linear-gradient(160deg, #19211f, #111816);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 10px;
-}
-
 .tt-log-header {
   display: flex;
   justify-content: space-between;
@@ -524,7 +647,7 @@ body {
   overflow: auto;
   display: grid;
   gap: 5px;
-  min-height: 240px;
+  min-height: 180px;
 }
 
 .tt-log-entry {
@@ -571,9 +694,10 @@ body {
 }
 
 .tt-right.minimized {
-  max-width: 72px;
-  min-width: 72px;
-  overflow: hidden;
+  max-width: 76px;
+  min-width: 76px;
+  padding-right: 6px;
+  padding-left: 6px;
 }
 
 .tt-right.minimized .tt-log-entries,
@@ -584,22 +708,13 @@ body {
 
 @media (max-width: 1200px) {
   .tt-root {
-    grid-template-columns: 300px 1fr;
+    grid-template-columns: 64px 300px 1fr;
     grid-template-areas:
-      "left main"
-      "right right";
-  }
-
-  .tt-left {
-    grid-area: left;
-  }
-
-  .tt-main {
-    grid-area: main;
+      "rail left main"
+      "rail right right";
   }
 
   .tt-right {
-    grid-area: right;
     max-height: 320px;
   }
 }
@@ -607,11 +722,27 @@ body {
 @media (max-width: 860px) {
   .tt-root {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "rail"
+      "left"
+      "main"
+      "right";
   }
 
-  .tt-left,
+  .tt-mode-rail {
+    flex-direction: row;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .tt-left {
+    max-height: none;
+  }
+
   .tt-right {
     max-height: none;
+    min-width: 0;
   }
 
   .tt-cell {

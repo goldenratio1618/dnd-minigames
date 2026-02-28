@@ -9,17 +9,45 @@
   </head>
   <body data-default-role="dm">
     <div id="tabletop-root" class="tt-root">
+      <aside class="tt-mode-rail">
+        <button id="menu-toggle" type="button" class="tt-rail-button tt-rail-menu" title="Menu" aria-label="Menu">
+          <span class="tt-hamburger" aria-hidden="true"><span></span><span></span><span></span></span>
+        </button>
+        <div class="tt-rail-divider"></div>
+        <button id="rail-character" type="button" class="tt-rail-button" title="Character">
+          <img src="/tabletop-icons/character.svg" alt="" />
+        </button>
+        <button id="rail-battlemaps" type="button" class="tt-rail-button tt-hidden" title="Battlemaps">
+          <img src="/tabletop-icons/battlemaps.svg" alt="" />
+        </button>
+        <button id="rail-rolls" type="button" class="tt-rail-button" title="Rolls">
+          <img src="/tabletop-icons/rolls.svg" alt="" />
+        </button>
+        <button id="rail-combat" type="button" class="tt-rail-button" title="Combat">
+          <img src="/tabletop-icons/combat.svg" alt="" />
+        </button>
+        <button id="rail-utilities" type="button" class="tt-rail-button" title="Utilities">
+          <img src="/tabletop-icons/utilities.svg" alt="" />
+        </button>
+        <div class="tt-rail-divider"></div>
+        <button id="rail-log" type="button" class="tt-rail-button" title="Log">
+          <img src="/tabletop-icons/log.svg" alt="" />
+        </button>
+      </aside>
+
       <aside class="tt-left">
-        <div class="tt-menu-shell">
-          <button id="menu-toggle" type="button" class="tt-menu-toggle">Menu</button>
-          <div id="menu-buttons" class="tt-menu-buttons tt-hidden">
-            <button id="menu-account" type="button" class="tt-menu-button" title="Account">A</button>
-            <button id="menu-character" type="button" class="tt-menu-button" title="Character">C</button>
-            <button id="menu-rolls" type="button" class="tt-menu-button" title="Skill Rolls">R</button>
-            <button id="menu-log" type="button" class="tt-menu-button" title="Session Log">L</button>
-            <button id="menu-utilities" type="button" class="tt-menu-button" title="Utilities">U</button>
+        <section class="tt-card tt-panel" id="menu-card" data-menu-panel="menu">
+          <h2>Menu</h2>
+          <div id="menu-buttons" class="tt-menu-buttons">
+            <button id="menu-account" type="button" class="tt-menu-button" title="Account"><img src="/tabletop-icons/account.svg" alt="" /><span>Account</span></button>
+            <button id="menu-character" type="button" class="tt-menu-button" title="Character"><img src="/tabletop-icons/character.svg" alt="" /><span>Character</span></button>
+            <button id="menu-battlemaps" type="button" class="tt-menu-button tt-hidden" title="Battlemaps"><img src="/tabletop-icons/battlemaps.svg" alt="" /><span>Battlemaps</span></button>
+            <button id="menu-rolls" type="button" class="tt-menu-button" title="Skill Rolls"><img src="/tabletop-icons/rolls.svg" alt="" /><span>Rolls</span></button>
+            <button id="menu-combat" type="button" class="tt-menu-button" title="Combat"><img src="/tabletop-icons/combat.svg" alt="" /><span>Combat</span></button>
+            <button id="menu-log" type="button" class="tt-menu-button" title="Session Log"><img src="/tabletop-icons/log.svg" alt="" /><span>Log</span></button>
+            <button id="menu-utilities" type="button" class="tt-menu-button" title="Utilities"><img src="/tabletop-icons/utilities.svg" alt="" /><span>Utilities</span></button>
           </div>
-        </div>
+        </section>
 
         <section class="tt-card tt-panel" id="auth-card" data-menu-panel="account">
           <h2>Account</h2>
@@ -103,7 +131,7 @@
           </form>
         </section>
 
-        <section class="tt-card tt-hidden tt-panel" id="map-card" data-menu-panel="character">
+        <section class="tt-card tt-hidden tt-panel" id="map-card" data-menu-panel="battlemaps">
           <h2>Battlemaps (DM)</h2>
           <div class="tt-grid2">
             <select id="map-select"></select>
@@ -122,6 +150,10 @@
             <option value="standard">Standard</option>
             <option value="echoing-mines">Echoing Mines Extension</option>
           </select>
+          <div class="tt-row">
+            <label for="map-grid-feet">Feet per Square</label>
+            <input id="map-grid-feet" type="number" min="1" max="200" value="5" />
+          </div>
           <label class="tt-file-label" for="map-background-input">Background Image</label>
           <input id="map-background-input" type="file" accept="image/*" />
 
@@ -236,6 +268,17 @@
           <div id="roll-result" class="tt-result"></div>
         </section>
 
+        <section class="tt-card tt-panel" id="combat-card" data-menu-panel="combat">
+          <h2>Turn Order</h2>
+          <div id="initiative-summary" class="tt-inline-value">No active combat.</div>
+          <div id="initiative-order-list" class="tt-list"></div>
+          <div id="initiative-controls" class="tt-grid2 tt-hidden">
+            <button id="initiative-start" type="button">Start Initiative</button>
+            <button id="initiative-next" type="button">Next Turn</button>
+          </div>
+          <button id="initiative-stop" type="button" class="tt-hidden">End Initiative</button>
+        </section>
+
         <section class="tt-card tt-panel" id="injury-card" data-menu-panel="utilities">
           <h2>Injury Rolls</h2>
           <div class="tt-grid2">
@@ -270,12 +313,17 @@
             <input id="group-roll-skill" type="text" placeholder="Group roll skill" />
             <button id="group-roll-send" type="button">Ask All Players to Roll</button>
           </div>
-          <div class="tt-grid2">
-            <button id="initiative-start" type="button">Start Initiative</button>
-            <button id="initiative-next" type="button">Next Turn</button>
-          </div>
-          <button id="initiative-stop" type="button">End Initiative</button>
         </section>
+
+        <section class="tt-card tt-panel" id="measure-card" data-menu-panel="utilities">
+          <h2>Distance Tool</h2>
+          <label class="tt-checkline">
+            <input id="measure-enabled" type="checkbox" />
+            Enable ruler (click and drag on the map)
+          </label>
+          <div id="measure-readout" class="tt-inline-value">Distance: -</div>
+        </section>
+
       </aside>
 
       <main class="tt-main">
@@ -284,11 +332,18 @@
           <div id="main-status">Connecting...</div>
         </header>
         <section class="tt-board" id="board-wrap">
-          <div id="map-grid-wrap" class="tt-grid-wrap"><div id="map-grid-cells" class="tt-grid"></div><div id="map-grid-tokens" class="tt-grid tt-grid-overlay"></div></div>
+          <div id="map-grid-wrap" class="tt-grid-wrap">
+            <div id="map-grid-cells" class="tt-grid"></div>
+            <div id="map-grid-tokens" class="tt-grid tt-grid-overlay"></div>
+            <svg id="map-measure-overlay" class="tt-measure-overlay" viewBox="0 0 100 100" preserveAspectRatio="none">
+              <line id="map-measure-line" x1="0" y1="0" x2="0" y2="0"></line>
+            </svg>
+            <div id="map-measure-label" class="tt-measure-label tt-hidden">0 ft</div>
+          </div>
         </section>
       </main>
 
-      <aside class="tt-right" id="log-panel" data-menu-panel="log">
+      <aside class="tt-right" id="log-panel">
         <div class="tt-log-header">
           <h2>Session Log</h2>
           <button id="log-toggle" type="button">Minimize</button>

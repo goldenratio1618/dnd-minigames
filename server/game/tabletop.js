@@ -15,6 +15,7 @@ const DEFAULT_CELL = {
 const TERRAIN_BLOCKERS = new Set(["stone_wall", "wooden_wall", "window"]);
 const HERB_SHEET_ID = "1_ly4-3ykWpQ47oDLyF2hDewntCJ4QR6hImODhmwNlYg";
 const HERB_SHEET_NAME = "RULES_HERBS";
+const MAX_MAP_BACKGROUND_DATA_URL_LENGTH = 10_000_000;
 
 const ROLL_MODIFIER_CATALOG = {
   guidance: {
@@ -794,14 +795,16 @@ function makeEmptyGrid(rows, cols) {
   return grid;
 }
 
-function createMap({ name, rows, cols, scenarioType = "standard" }) {
+function createMap({ name, rows, cols, scenarioType = "standard", feetPerCell = 5 }) {
   const safeRows = clamp(Number.parseInt(rows, 10) || DEFAULT_GRID_ROWS, 5, 80);
   const safeCols = clamp(Number.parseInt(cols, 10) || DEFAULT_GRID_COLS, 5, 80);
+  const safeFeetPerCell = clamp(Number.parseFloat(feetPerCell) || 5, 1, 200);
   return {
     id: createId("map"),
     name: String(name || "New Battlemap").slice(0, 120),
     rows: safeRows,
     cols: safeCols,
+    feetPerCell: safeFeetPerCell,
     scenarioType,
     background: {
       imageDataUrl: "",
@@ -1351,6 +1354,18 @@ function createTabletopSystem(io, options = {}) {
   const persistence = createPersistence(options.dataDirectory);
   const state = persistence.getState();
 
+  state.maps.forEach((map) => {
+    if (!Number.isFinite(map.feetPerCell) || Number(map.feetPerCell) <= 0) {
+      map.feetPerCell = 5;
+    }
+    if (!map.background || typeof map.background !== "object") {
+      map.background = { imageDataUrl: "" };
+    }
+    if (typeof map.background.imageDataUrl !== "string") {
+      map.background.imageDataUrl = "";
+    }
+  });
+
   const sessions = new Map();
   const socketToSession = new Map();
   const approvalRequests = new Map();
@@ -1491,6 +1506,7 @@ function createTabletopSystem(io, options = {}) {
         name: candidate.name,
         rows: candidate.rows,
         cols: candidate.cols,
+        feetPerCell: Number(candidate.feetPerCell) || 5,
         scenarioType: candidate.scenarioType || "standard",
         updatedAt: candidate.updatedAt,
       })),
@@ -2420,6 +2436,7 @@ function createTabletopSystem(io, options = {}) {
         rows: payload && payload.rows,
         cols: payload && payload.cols,
         scenarioType: payload && payload.scenarioType ? payload.scenarioType : "standard",
+        feetPerCell: payload && payload.feetPerCell,
       });
       state.maps.push(map);
       state.scene.activeMapId = map.id;
@@ -2475,9 +2492,37 @@ function createTabletopSystem(io, options = {}) {
       if (!map) {
         return;
       }
-      map.background.imageDataUrl = String((payload && payload.imageDataUrl) || "").slice(0, 5_000_000);
+      const imageDataUrl = String((payload && payload.imageDataUrl) || "");
+      if (!imageDataUrl) {
+        map.background.imageDataUrl = "";
+      } else {
+        const looksLikeDataImage = /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(imageDataUrl);
+        if (!looksLikeDataImage) {
+          socket.emit("tabletop:error", { message: "Background must be an image file." });
+          return;
+        }
+        if (imageDataUrl.length > MAX_MAP_BACKGROUND_DATA_URL_LENGTH) {
+          socket.emit("tabletop:error", { message: "Background image is too large." });
+          return;
+        }
+        map.background.imageDataUrl = imageDataUrl;
+      }
       map.updatedAt = nowIso();
       appendSystemLog(socket, `Updated background for ${map.name}.`);
+      persistence.saveSoon();
+      broadcastSnapshots();
+    });
+
+    socket.on("map:setScale", (payload) => {
+      if (!requireDm(socket)) {
+        return;
+      }
+      const map = activeMapFromState(state);
+      if (!map) {
+        return;
+      }
+      map.feetPerCell = clamp(Number.parseFloat(payload && payload.feetPerCell) || 5, 1, 200);
+      map.updatedAt = nowIso();
       persistence.saveSoon();
       broadcastSnapshots();
     });

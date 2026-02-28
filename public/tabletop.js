@@ -3,6 +3,7 @@
 
   const STORAGE_SESSION_KEY = "gairos_tabletop_session";
   const STORAGE_LOG_MIN_KEY = "gairos_tabletop_log_minimized";
+  const MAX_MAP_BACKGROUND_DATA_URL_LENGTH = 9_500_000;
 
   const elements = {
     authStatus: document.getElementById("auth-status"),
@@ -20,10 +21,18 @@
     registerRole: document.getElementById("register-role"),
     registerDmCode: document.getElementById("register-dm-code"),
     menuToggle: document.getElementById("menu-toggle"),
+    railCharacter: document.getElementById("rail-character"),
+    railBattlemaps: document.getElementById("rail-battlemaps"),
+    railRolls: document.getElementById("rail-rolls"),
+    railCombat: document.getElementById("rail-combat"),
+    railUtilities: document.getElementById("rail-utilities"),
+    railLog: document.getElementById("rail-log"),
     menuButtons: document.getElementById("menu-buttons"),
     menuAccount: document.getElementById("menu-account"),
     menuCharacter: document.getElementById("menu-character"),
+    menuBattlemaps: document.getElementById("menu-battlemaps"),
     menuRolls: document.getElementById("menu-rolls"),
+    menuCombat: document.getElementById("menu-combat"),
     menuLog: document.getElementById("menu-log"),
     menuUtilities: document.getElementById("menu-utilities"),
 
@@ -70,6 +79,7 @@
     mapCreateRows: document.getElementById("map-create-rows"),
     mapCreateCols: document.getElementById("map-create-cols"),
     mapScenarioType: document.getElementById("map-scenario-type"),
+    mapGridFeet: document.getElementById("map-grid-feet"),
     mapBackgroundInput: document.getElementById("map-background-input"),
     interactionMode: document.getElementById("interaction-mode"),
     terrainBrush: document.getElementById("terrain-brush"),
@@ -109,18 +119,27 @@
     forageRoll: document.getElementById("forage-roll"),
     groupRollSkill: document.getElementById("group-roll-skill"),
     groupRollSend: document.getElementById("group-roll-send"),
+    initiativeSummary: document.getElementById("initiative-summary"),
+    initiativeOrderList: document.getElementById("initiative-order-list"),
+    initiativeControls: document.getElementById("initiative-controls"),
     initiativeStart: document.getElementById("initiative-start"),
     initiativeNext: document.getElementById("initiative-next"),
     initiativeStop: document.getElementById("initiative-stop"),
+    measureEnabled: document.getElementById("measure-enabled"),
+    measureReadout: document.getElementById("measure-readout"),
 
     injuryEntitySelect: document.getElementById("injury-entity-select"),
     injuryOverkill: document.getElementById("injury-overkill"),
     injuryRoll: document.getElementById("injury-roll"),
     injuryResult: document.getElementById("injury-result"),
 
+    boardWrap: document.getElementById("board-wrap"),
     mapGridWrap: document.getElementById("map-grid-wrap"),
     mapGridCells: document.getElementById("map-grid-cells"),
     mapGridTokens: document.getElementById("map-grid-tokens"),
+    mapMeasureOverlay: document.getElementById("map-measure-overlay"),
+    mapMeasureLine: document.getElementById("map-measure-line"),
+    mapMeasureLabel: document.getElementById("map-measure-label"),
 
     logPanel: document.getElementById("log-panel"),
     logToggle: document.getElementById("log-toggle"),
@@ -141,6 +160,29 @@
     checkedApprovedModifierIds: new Set(),
     approvedModifierEntries: [],
     lastStatusTimeout: null,
+    previousMenuBeforeOpen: "character",
+    paintDrag: {
+      active: false,
+      paintedCells: new Set(),
+    },
+    measure: {
+      enabled: false,
+      dragging: false,
+      start: null,
+      end: null,
+      cellSize: 34,
+    },
+    suppressCellClickUntil: 0,
+    mapView: {
+      scale: 1,
+      panX: 0,
+      panY: 0,
+      panning: false,
+      startClientX: 0,
+      startClientY: 0,
+      startPanX: 0,
+      startPanY: 0,
+    },
   };
 
   function emit(eventName, payload) {
@@ -251,6 +293,314 @@
     });
   }
 
+  function loadImageFromDataUrl(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Could not decode image."));
+      image.src = dataUrl;
+    });
+  }
+
+  function activeInteractionMode() {
+    if (!isDm() || !elements.interactionMode) {
+      return "move";
+    }
+    return elements.interactionMode.value || "move";
+  }
+
+  function isPaintModeActive() {
+    return isDm() && activeInteractionMode() === "paint";
+  }
+
+  function isPlaceModeActive() {
+    return isDm() && activeInteractionMode() === "place";
+  }
+
+  function feetPerSquare(map = activeMap()) {
+    const value = Number(map && map.feetPerCell);
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+    return 5;
+  }
+
+  async function normalizeMapBackgroundDataUrl(file) {
+    const initial = await readFileAsDataUrl(file);
+    if (initial.length <= MAX_MAP_BACKGROUND_DATA_URL_LENGTH) {
+      return initial;
+    }
+
+    const image = await loadImageFromDataUrl(initial);
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Canvas is unavailable for map compression.");
+    }
+
+    let width = image.naturalWidth || image.width || 1;
+    let height = image.naturalHeight || image.height || 1;
+    const maxDimension = 3200;
+    if (width > maxDimension || height > maxDimension) {
+      const scale = Math.min(maxDimension / width, maxDimension / height);
+      width = Math.max(1, Math.round(width * scale));
+      height = Math.max(1, Math.round(height * scale));
+    }
+
+    let attempts = 0;
+    while (attempts < 7) {
+      canvas.width = width;
+      canvas.height = height;
+      context.clearRect(0, 0, width, height);
+      context.drawImage(image, 0, 0, width, height);
+
+      for (let quality = 0.92; quality >= 0.5; quality -= 0.08) {
+        const compressed = canvas.toDataURL("image/jpeg", quality);
+        if (compressed.length <= MAX_MAP_BACKGROUND_DATA_URL_LENGTH) {
+          return compressed;
+        }
+      }
+
+      width = Math.max(800, Math.round(width * 0.85));
+      height = Math.max(800, Math.round(height * 0.85));
+      attempts += 1;
+    }
+
+    throw new Error("Map image is too large. Try a smaller or lower-resolution file.");
+  }
+
+  function stopPaintDrag() {
+    state.paintDrag.active = false;
+    state.paintDrag.paintedCells.clear();
+  }
+
+  function paintCellIfNeeded(x, y) {
+    if (!isPaintModeActive()) {
+      return false;
+    }
+    const key = `${x},${y}`;
+    if (state.paintDrag.paintedCells.has(key)) {
+      return false;
+    }
+    state.paintDrag.paintedCells.add(key);
+    emit("map:paintTerrain", {
+      x,
+      y,
+      brush: elements.terrainBrush.value,
+    });
+    return true;
+  }
+
+  function beginMeasureDrag(x, y, cellSize) {
+    state.measure.dragging = true;
+    state.measure.start = { x, y };
+    state.measure.end = { x, y };
+    state.measure.cellSize = cellSize;
+    state.suppressCellClickUntil = Date.now() + 250;
+  }
+
+  function updateMeasureDrag(x, y, cellSize) {
+    if (!state.measure.dragging) {
+      return;
+    }
+    state.measure.end = { x, y };
+    state.measure.cellSize = cellSize;
+    renderMeasurementOverlay();
+  }
+
+  function endMeasureDrag() {
+    if (!state.measure.dragging) {
+      return;
+    }
+    state.measure.dragging = false;
+    renderMeasurementOverlay();
+  }
+
+  function clearMeasurementOverlay() {
+    if (elements.mapMeasureLine) {
+      elements.mapMeasureLine.setAttribute("x1", "0");
+      elements.mapMeasureLine.setAttribute("y1", "0");
+      elements.mapMeasureLine.setAttribute("x2", "0");
+      elements.mapMeasureLine.setAttribute("y2", "0");
+    }
+    if (elements.mapMeasureLabel) {
+      elements.mapMeasureLabel.classList.add("tt-hidden");
+    }
+    if (elements.measureReadout) {
+      elements.measureReadout.textContent = "Distance: -";
+    }
+  }
+
+  function renderMeasurementOverlay() {
+    const map = activeMap();
+    const start = state.measure.start;
+    const end = state.measure.end;
+    if (!map || !start || !end) {
+      clearMeasurementOverlay();
+      return;
+    }
+    if (
+      start.x < 0 ||
+      start.y < 0 ||
+      end.x < 0 ||
+      end.y < 0 ||
+      start.x >= map.cols ||
+      end.x >= map.cols ||
+      start.y >= map.rows ||
+      end.y >= map.rows
+    ) {
+      clearMeasurementOverlay();
+      return;
+    }
+
+    const cellSize = Number(state.measure.cellSize) || 34;
+    const sx = start.x * cellSize + cellSize / 2;
+    const sy = start.y * cellSize + cellSize / 2;
+    const ex = end.x * cellSize + cellSize / 2;
+    const ey = end.y * cellSize + cellSize / 2;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const squares = Math.sqrt(dx * dx + dy * dy);
+    const feet = squares * feetPerSquare(map);
+
+    if (elements.mapMeasureLine) {
+      elements.mapMeasureLine.setAttribute("x1", String(sx));
+      elements.mapMeasureLine.setAttribute("y1", String(sy));
+      elements.mapMeasureLine.setAttribute("x2", String(ex));
+      elements.mapMeasureLine.setAttribute("y2", String(ey));
+    }
+    if (elements.mapMeasureLabel) {
+      const cx = (sx + ex) / 2;
+      const cy = (sy + ey) / 2;
+      elements.mapMeasureLabel.style.left = `${cx}px`;
+      elements.mapMeasureLabel.style.top = `${cy}px`;
+      elements.mapMeasureLabel.textContent = `${feet.toFixed(1)} ft`;
+      elements.mapMeasureLabel.classList.remove("tt-hidden");
+    }
+    if (elements.measureReadout) {
+      elements.measureReadout.textContent = `Distance: ${squares.toFixed(2)} squares (${feet.toFixed(1)} ft)`;
+    }
+  }
+
+  function mapPixelSize() {
+    const map = activeMap();
+    if (!map) {
+      return { width: 0, height: 0 };
+    }
+    const cellSize = Number(state.measure.cellSize) || 34;
+    return {
+      width: map.cols * cellSize,
+      height: map.rows * cellSize,
+    };
+  }
+
+  function clampMapPan(panX, panY, scale) {
+    if (!elements.boardWrap) {
+      return { x: panX, y: panY };
+    }
+    const { width, height } = mapPixelSize();
+    if (width <= 0 || height <= 0) {
+      return { x: 0, y: 0 };
+    }
+
+    const viewportRect = elements.boardWrap.getBoundingClientRect();
+    const scaledWidth = width * scale;
+    const scaledHeight = height * scale;
+
+    let minX = Math.min(0, viewportRect.width - scaledWidth);
+    let minY = Math.min(0, viewportRect.height - scaledHeight);
+    let maxX = 0;
+    let maxY = 0;
+
+    if (scaledWidth < viewportRect.width) {
+      const centeredX = (viewportRect.width - scaledWidth) / 2;
+      minX = centeredX;
+      maxX = centeredX;
+    }
+    if (scaledHeight < viewportRect.height) {
+      const centeredY = (viewportRect.height - scaledHeight) / 2;
+      minY = centeredY;
+      maxY = centeredY;
+    }
+
+    return {
+      x: clamp(panX, minX, maxX),
+      y: clamp(panY, minY, maxY),
+    };
+  }
+
+  function applyMapViewTransform() {
+    if (!elements.mapGridWrap) {
+      return;
+    }
+    const map = activeMap();
+    if (!map) {
+      elements.mapGridWrap.style.transform = "none";
+      return;
+    }
+    const safeScale = clamp(Number(state.mapView.scale) || 1, 0.45, 3.5);
+    const clamped = clampMapPan(state.mapView.panX, state.mapView.panY, safeScale);
+    state.mapView.scale = safeScale;
+    state.mapView.panX = clamped.x;
+    state.mapView.panY = clamped.y;
+    elements.mapGridWrap.style.transform = `translate(${clamped.x}px, ${clamped.y}px) scale(${safeScale})`;
+  }
+
+  function startMapPan(event) {
+    if (!activeMap() || !elements.boardWrap) {
+      return;
+    }
+    state.mapView.panning = true;
+    state.mapView.startClientX = event.clientX;
+    state.mapView.startClientY = event.clientY;
+    state.mapView.startPanX = state.mapView.panX;
+    state.mapView.startPanY = state.mapView.panY;
+    elements.boardWrap.classList.add("tt-panning");
+  }
+
+  function continueMapPan(event) {
+    if (!state.mapView.panning) {
+      return;
+    }
+    const dx = event.clientX - state.mapView.startClientX;
+    const dy = event.clientY - state.mapView.startClientY;
+    state.mapView.panX = state.mapView.startPanX + dx;
+    state.mapView.panY = state.mapView.startPanY + dy;
+    applyMapViewTransform();
+  }
+
+  function stopMapPan() {
+    if (!state.mapView.panning) {
+      return;
+    }
+    state.mapView.panning = false;
+    if (elements.boardWrap) {
+      elements.boardWrap.classList.remove("tt-panning");
+    }
+  }
+
+  function zoomMapAtClientPoint(clientX, clientY, deltaY) {
+    if (!activeMap() || !elements.boardWrap) {
+      return;
+    }
+    const rect = elements.boardWrap.getBoundingClientRect();
+    const pointerX = clientX - rect.left;
+    const pointerY = clientY - rect.top;
+    const oldScale = clamp(Number(state.mapView.scale) || 1, 0.45, 3.5);
+    const factor = deltaY < 0 ? 1.12 : 0.89;
+    const newScale = clamp(oldScale * factor, 0.45, 3.5);
+    if (Math.abs(newScale - oldScale) < 0.001) {
+      return;
+    }
+
+    const worldX = (pointerX - state.mapView.panX) / oldScale;
+    const worldY = (pointerY - state.mapView.panY) / oldScale;
+    state.mapView.scale = newScale;
+    state.mapView.panX = pointerX - worldX * newScale;
+    state.mapView.panY = pointerY - worldY * newScale;
+    applyMapViewTransform();
+  }
+
   function resetCharacterForm() {
     elements.characterId.value = "";
     elements.characterName.value = "";
@@ -277,6 +627,10 @@
   function numericInputValue(value) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? String(parsed) : "";
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
   }
 
   function formatStatKey(key) {
@@ -468,8 +822,11 @@
       elements.authStatus.textContent = `${current.username} (${current.role})`;
       elements.authForms.classList.add("tt-hidden");
       elements.logoutButton.classList.remove("tt-hidden");
-      if (state.activeMenu === "account" && isAuthenticated()) {
+      if (state.activeMenu === "account") {
         state.activeMenu = "character";
+        state.previousMenuBeforeOpen = "character";
+      } else if (state.previousMenuBeforeOpen === "account") {
+        state.previousMenuBeforeOpen = "character";
       }
     } else {
       elements.authStatus.textContent = "Not logged in";
@@ -477,7 +834,10 @@
       elements.logoutButton.classList.add("tt-hidden");
       const defaultRole = document.body.dataset.defaultRole === "dm" ? "dm" : "player";
       elements.registerRole.value = defaultRole;
-      state.activeMenu = "account";
+      if (state.activeMenu !== "menu") {
+        state.activeMenu = "account";
+      }
+      state.previousMenuBeforeOpen = "account";
     }
   }
 
@@ -485,19 +845,94 @@
     return [
       elements.menuAccount,
       elements.menuCharacter,
+      elements.menuBattlemaps,
       elements.menuRolls,
+      elements.menuCombat,
       elements.menuLog,
       elements.menuUtilities,
     ].filter(Boolean);
   }
 
+  function railButtonsByPanel() {
+    return [
+      { panel: "character", button: elements.railCharacter },
+      { panel: "battlemaps", button: elements.railBattlemaps },
+      { panel: "rolls", button: elements.railRolls },
+      { panel: "combat", button: elements.railCombat },
+      { panel: "utilities", button: elements.railUtilities },
+      { panel: "log", button: elements.railLog },
+    ];
+  }
+
+  function activePanelForSidebar() {
+    const panel = state.activeMenu || "character";
+    return panel === "menu" ? state.previousMenuBeforeOpen || "character" : panel;
+  }
+
+  function showLogPanel(expand = true) {
+    if (!elements.logPanel || !elements.logToggle) {
+      return;
+    }
+    if (expand) {
+      elements.logPanel.classList.remove("minimized");
+      elements.logToggle.textContent = "Minimize";
+      localStorage.setItem(STORAGE_LOG_MIN_KEY, "0");
+    } else {
+      elements.logPanel.classList.add("minimized");
+      elements.logToggle.textContent = "Open";
+      localStorage.setItem(STORAGE_LOG_MIN_KEY, "1");
+    }
+  }
+
+  function openMenuScreen() {
+    const panel = state.activeMenu || "character";
+    if (panel !== "menu") {
+      state.previousMenuBeforeOpen = panel;
+      state.activeMenu = "menu";
+    }
+    applyMenuVisibility();
+  }
+
+  function closeMenuScreen() {
+    if (state.activeMenu !== "menu") {
+      return;
+    }
+    state.activeMenu = state.previousMenuBeforeOpen || "character";
+    applyMenuVisibility();
+  }
+
+  function choosePanelFromMenu(panelKey) {
+    if (panelKey === "log") {
+      showLogPanel(true);
+      closeMenuScreen();
+      return;
+    }
+    state.activeMenu = panelKey;
+    applyMenuVisibility();
+  }
+
   function setActiveMenu(menuKey) {
+    if (menuKey === "log") {
+      showLogPanel(true);
+      applyMenuVisibility();
+      return;
+    }
+    if (menuKey !== "menu") {
+      state.previousMenuBeforeOpen = menuKey;
+    }
     state.activeMenu = menuKey;
     applyMenuVisibility();
   }
 
   function applyMenuVisibility() {
-    const panel = state.activeMenu || "character";
+    let panel = state.activeMenu || "character";
+    if (panel === "battlemaps" && !isDm()) {
+      panel = "character";
+      state.activeMenu = panel;
+    }
+    if (panel === "menu" && !isAuthenticated()) {
+      state.previousMenuBeforeOpen = "account";
+    }
     const panelElements = document.querySelectorAll("[data-menu-panel]");
     panelElements.forEach((node) => {
       if (!(node instanceof HTMLElement)) {
@@ -509,18 +944,34 @@
     });
 
     if (elements.menuButtons) {
+      const menuButtonActivePanel = panel === "menu" ? activePanelForSidebar() : panel;
       menuButtonsList().forEach((button) => {
         if (!button) {
           return;
         }
         const buttonPanel = button.id.replace("menu-", "");
-        button.classList.toggle("active", buttonPanel === panel);
+        if (button === elements.menuBattlemaps) {
+          button.classList.toggle("tt-hidden", !isDm());
+        }
+        const isLogButtonActive =
+          buttonPanel === "log" && elements.logPanel && !elements.logPanel.classList.contains("minimized");
+        button.classList.toggle("active", isLogButtonActive || buttonPanel === menuButtonActivePanel);
       });
     }
 
-    if (panel !== "log" && elements.logPanel) {
-      elements.logPanel.classList.remove("minimized");
-      elements.logToggle.textContent = "Minimize";
+    railButtonsByPanel().forEach((entry) => {
+      if (!entry.button) {
+        return;
+      }
+      if (entry.panel === "battlemaps") {
+        entry.button.classList.toggle("tt-hidden", !isDm());
+      }
+      const activePanel = activePanelForSidebar();
+      const isLogActive = entry.panel === "log" && elements.logPanel && !elements.logPanel.classList.contains("minimized");
+      entry.button.classList.toggle("active", isLogActive || activePanel === entry.panel);
+    });
+    if (elements.menuToggle) {
+      elements.menuToggle.classList.toggle("active", panel === "menu");
     }
   }
 
@@ -721,6 +1172,7 @@
     const show = isDm();
     elements.mapCard.classList.toggle("tt-hidden", !show);
     if (!show) {
+      updateInteractionModeUi();
       return;
     }
 
@@ -742,8 +1194,82 @@
       elements.mapSelect.value = activeMapId;
     }
 
+    const map = activeMap();
+    if (elements.mapGridFeet && map) {
+      elements.mapGridFeet.value = String(feetPerSquare(map));
+    }
+
     renderTokenRoster();
     renderSelectedTokenControls();
+    updateInteractionModeUi();
+  }
+
+  function renderInitiativePanel() {
+    if (!elements.initiativeSummary || !elements.initiativeOrderList) {
+      return;
+    }
+    const scene = state.snapshot && state.snapshot.scene;
+    const initiative = scene && scene.initiative;
+    const active = Boolean(initiative && initiative.active && Array.isArray(initiative.order));
+
+    if (elements.initiativeControls) {
+      elements.initiativeControls.classList.toggle("tt-hidden", !isDm());
+    }
+    if (elements.initiativeStop) {
+      elements.initiativeStop.classList.toggle("tt-hidden", !isDm());
+    }
+
+    if (!active || initiative.order.length === 0) {
+      elements.initiativeSummary.textContent = "No active combat.";
+      elements.initiativeOrderList.innerHTML = "";
+      return;
+    }
+
+    const currentIndex = clamp(
+      Number(initiative.currentIndex) || 0,
+      0,
+      Math.max(0, initiative.order.length - 1)
+    );
+    elements.initiativeSummary.textContent = `Round ${initiative.round} | ${initiative.order[currentIndex].name}'s turn`;
+
+    elements.initiativeOrderList.innerHTML = "";
+    initiative.order.forEach((entry, index) => {
+      const row = document.createElement("div");
+      row.className = "tt-list-item";
+      if (index === currentIndex) {
+        row.style.borderColor = "#d9a441";
+      }
+
+      const left = document.createElement("span");
+      left.textContent = `${index + 1}. ${entry.name}`;
+      row.appendChild(left);
+
+      const right = document.createElement("span");
+      right.className = "tt-log-meta";
+      const initiativeMod = Number(entry.initiativeMod) || 0;
+      right.textContent = `${entry.total} (${entry.roll}${initiativeMod >= 0 ? "+" : ""}${initiativeMod})`;
+      row.appendChild(right);
+
+      elements.initiativeOrderList.appendChild(row);
+    });
+  }
+
+  function updateInteractionModeUi() {
+    if (!elements.mapGridWrap) {
+      return;
+    }
+    const paintMode = isPaintModeActive();
+    const placeMode = isPlaceModeActive();
+    const measureMode = Boolean(state.measure.enabled);
+    elements.mapGridWrap.classList.toggle("tt-mode-paint", paintMode);
+    elements.mapGridWrap.classList.toggle("tt-mode-measure", measureMode);
+    if (elements.terrainBrush) {
+      elements.terrainBrush.disabled = placeMode;
+      const row = elements.terrainBrush.closest(".tt-row");
+      if (row) {
+        row.classList.toggle("is-disabled", placeMode);
+      }
+    }
   }
 
   function tokenLabelFromSpecial(cell) {
@@ -795,14 +1321,18 @@
       return;
     }
 
-    const mode = isDm() ? elements.interactionMode.value : "move";
+    if (state.measure.enabled) {
+      return;
+    }
+    if (Date.now() < state.suppressCellClickUntil) {
+      return;
+    }
+
+    const mode = activeInteractionMode();
 
     if (isDm() && mode === "paint") {
-      emit("map:paintTerrain", {
-        x,
-        y,
-        brush: elements.terrainBrush.value,
-      });
+      paintCellIfNeeded(x, y);
+      stopPaintDrag();
       return;
     }
 
@@ -835,10 +1365,13 @@
     elements.mapGridTokens.innerHTML = "";
 
     if (!map) {
+      clearMeasurementOverlay();
+      applyMapViewTransform();
       return;
     }
 
     const cellSize = window.innerWidth < 860 ? 30 : 34;
+    state.measure.cellSize = cellSize;
 
     elements.mapGridCells.style.gridTemplateColumns = `repeat(${map.cols}, ${cellSize}px)`;
     elements.mapGridCells.style.gridTemplateRows = `repeat(${map.rows}, ${cellSize}px)`;
@@ -847,6 +1380,10 @@
     elements.mapGridCells.style.backgroundImage = map.background && map.background.imageDataUrl
       ? `url(${map.background.imageDataUrl})`
       : "none";
+    if (elements.mapMeasureOverlay) {
+      elements.mapMeasureOverlay.setAttribute("viewBox", `0 0 ${map.cols * cellSize} ${map.rows * cellSize}`);
+    }
+    updateInteractionModeUi();
 
     map.terrain.forEach((row, y) => {
       row.forEach((cell, x) => {
@@ -868,6 +1405,35 @@
           special.textContent = label;
           button.appendChild(special);
         }
+
+        button.addEventListener("mousedown", (event) => {
+          if (event.button !== 0) {
+            return;
+          }
+          if (state.measure.enabled) {
+            event.preventDefault();
+            beginMeasureDrag(x, y, cellSize);
+            renderMeasurementOverlay();
+            return;
+          }
+          if (isPaintModeActive()) {
+            event.preventDefault();
+            state.paintDrag.active = true;
+            state.paintDrag.paintedCells.clear();
+            state.suppressCellClickUntil = Date.now() + 250;
+            paintCellIfNeeded(x, y);
+          }
+        });
+
+        button.addEventListener("mouseenter", (event) => {
+          if (state.measure.dragging) {
+            updateMeasureDrag(x, y, cellSize);
+            return;
+          }
+          if (state.paintDrag.active && isPaintModeActive() && (event.buttons & 1) === 1) {
+            paintCellIfNeeded(x, y);
+          }
+        });
 
         button.addEventListener("click", () => handleCellClick(x, y, cell));
         if (isDm()) {
@@ -938,6 +1504,9 @@
       }
 
       tokenEl.addEventListener("click", (event) => {
+        if (state.measure.enabled || isPaintModeActive()) {
+          return;
+        }
         event.preventDefault();
         event.stopPropagation();
         if (state.selectedTokenId === token.id) {
@@ -983,6 +1552,9 @@
       holder.appendChild(tokenEl);
       elements.mapGridTokens.appendChild(holder);
     });
+
+    renderMeasurementOverlay();
+    applyMapViewTransform();
   }
 
   function renderTokenRoster() {
@@ -1016,6 +1588,7 @@
         tokenImage: entry.tokenImage || "",
       };
       elements.interactionMode.value = "place";
+      updateInteractionModeUi();
       setStatus(`Selected ${entry.name} for placement.`);
       renderTokenRoster();
     };
@@ -1096,6 +1669,7 @@
       };
       state.selectedPlacement = placement;
       elements.interactionMode.value = "place";
+      updateInteractionModeUi();
       setStatus(`Selected custom token ${name}.`);
       renderTokenRoster();
     });
@@ -1812,6 +2386,7 @@
     renderRollAndInjurySelectors();
     renderMapGrid();
     renderLogs();
+    renderInitiativePanel();
     renderMapAndInitiativeSummary();
     applyMenuVisibility();
   }
@@ -1894,24 +2469,53 @@
 
   if (elements.menuToggle) {
     elements.menuToggle.addEventListener("click", () => {
-      elements.menuButtons.classList.toggle("tt-hidden");
+      if (state.activeMenu === "menu") {
+        closeMenuScreen();
+      } else {
+        openMenuScreen();
+      }
     });
   }
 
   if (elements.menuAccount) {
-    elements.menuAccount.addEventListener("click", () => setActiveMenu("account"));
+    elements.menuAccount.addEventListener("click", () => choosePanelFromMenu("account"));
   }
   if (elements.menuCharacter) {
-    elements.menuCharacter.addEventListener("click", () => setActiveMenu("character"));
+    elements.menuCharacter.addEventListener("click", () => choosePanelFromMenu("character"));
+  }
+  if (elements.menuBattlemaps) {
+    elements.menuBattlemaps.addEventListener("click", () => choosePanelFromMenu("battlemaps"));
   }
   if (elements.menuRolls) {
-    elements.menuRolls.addEventListener("click", () => setActiveMenu("rolls"));
+    elements.menuRolls.addEventListener("click", () => choosePanelFromMenu("rolls"));
+  }
+  if (elements.menuCombat) {
+    elements.menuCombat.addEventListener("click", () => choosePanelFromMenu("combat"));
   }
   if (elements.menuLog) {
-    elements.menuLog.addEventListener("click", () => setActiveMenu("log"));
+    elements.menuLog.addEventListener("click", () => choosePanelFromMenu("log"));
   }
   if (elements.menuUtilities) {
-    elements.menuUtilities.addEventListener("click", () => setActiveMenu("utilities"));
+    elements.menuUtilities.addEventListener("click", () => choosePanelFromMenu("utilities"));
+  }
+
+  if (elements.railCharacter) {
+    elements.railCharacter.addEventListener("click", () => setActiveMenu("character"));
+  }
+  if (elements.railBattlemaps) {
+    elements.railBattlemaps.addEventListener("click", () => setActiveMenu("battlemaps"));
+  }
+  if (elements.railRolls) {
+    elements.railRolls.addEventListener("click", () => setActiveMenu("rolls"));
+  }
+  if (elements.railCombat) {
+    elements.railCombat.addEventListener("click", () => setActiveMenu("combat"));
+  }
+  if (elements.railUtilities) {
+    elements.railUtilities.addEventListener("click", () => setActiveMenu("utilities"));
+  }
+  if (elements.railLog) {
+    elements.railLog.addEventListener("click", () => setActiveMenu("log"));
   }
 
   if (elements.characterSelect) {
@@ -2008,6 +2612,7 @@
       rows: elements.mapCreateRows.value,
       cols: elements.mapCreateCols.value,
       scenarioType: elements.mapScenarioType.value,
+      feetPerCell: Number.parseFloat(elements.mapGridFeet.value) || 5,
     });
   });
 
@@ -2033,19 +2638,37 @@
       return;
     }
     try {
-      const imageDataUrl = await readFileAsDataUrl(file);
+      const imageDataUrl = await normalizeMapBackgroundDataUrl(file);
       emit("map:setBackground", { imageDataUrl });
+      setStatus(`Background loaded: ${file.name}`);
     } catch (error) {
       setStatus(error.message, true);
     }
     elements.mapBackgroundInput.value = "";
   });
 
+  if (elements.mapGridFeet) {
+    elements.mapGridFeet.addEventListener("change", () => {
+      const map = activeMap();
+      if (!isDm() || !map) {
+        return;
+      }
+      const value = clamp(Number.parseFloat(elements.mapGridFeet.value) || 5, 1, 200);
+      elements.mapGridFeet.value = String(value);
+      emit("map:setScale", { feetPerCell: value });
+      renderMeasurementOverlay();
+    });
+  }
+
   elements.interactionMode.addEventListener("change", () => {
+    if (elements.interactionMode.value !== "paint") {
+      stopPaintDrag();
+    }
     if (elements.interactionMode.value !== "place") {
       state.selectedPlacement = null;
       renderTokenRoster();
     }
+    updateInteractionModeUi();
   });
 
   elements.tokenLayerToTokens.addEventListener("click", () => {
@@ -2204,6 +2827,59 @@
     });
   });
 
+  if (elements.measureEnabled) {
+    elements.measureEnabled.addEventListener("change", () => {
+      state.measure.enabled = Boolean(elements.measureEnabled.checked);
+      if (!state.measure.enabled) {
+        state.measure.dragging = false;
+        state.measure.start = null;
+        state.measure.end = null;
+        clearMeasurementOverlay();
+      } else {
+        setStatus("Ruler enabled. Click and drag on the map.");
+      }
+      updateInteractionModeUi();
+    });
+  }
+
+  if (elements.boardWrap) {
+    elements.boardWrap.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+    });
+    elements.boardWrap.addEventListener(
+      "wheel",
+      (event) => {
+        if (!activeMap()) {
+          return;
+        }
+        event.preventDefault();
+        zoomMapAtClientPoint(event.clientX, event.clientY, event.deltaY);
+      },
+      { passive: false }
+    );
+    elements.boardWrap.addEventListener("mousedown", (event) => {
+      if (event.button !== 1 && event.button !== 2) {
+        return;
+      }
+      event.preventDefault();
+      startMapPan(event);
+    });
+  }
+
+  window.addEventListener("mousemove", (event) => {
+    continueMapPan(event);
+  });
+
+  window.addEventListener("mouseup", () => {
+    stopPaintDrag();
+    endMeasureDrag();
+    stopMapPan();
+  });
+
+  window.addEventListener("resize", () => {
+    applyMapViewTransform();
+  });
+
   elements.chatForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const text = elements.chatInput.value.trim();
@@ -2214,11 +2890,14 @@
     elements.chatInput.value = "";
   });
 
-  elements.logToggle.addEventListener("click", () => {
-    const minimized = elements.logPanel.classList.toggle("minimized");
-    elements.logToggle.textContent = minimized ? "Open" : "Minimize";
-    localStorage.setItem(STORAGE_LOG_MIN_KEY, minimized ? "1" : "0");
-  });
+  if (elements.logToggle && elements.logPanel) {
+    elements.logToggle.addEventListener("click", () => {
+      const minimized = elements.logPanel.classList.toggle("minimized");
+      elements.logToggle.textContent = minimized ? "Open" : "Minimize";
+      localStorage.setItem(STORAGE_LOG_MIN_KEY, minimized ? "1" : "0");
+      applyMenuVisibility();
+    });
+  }
 
   socket.on("connect", () => {
     setStatus("Connected");
@@ -2351,8 +3030,9 @@
   });
 
   const minimizedByDefault = localStorage.getItem(STORAGE_LOG_MIN_KEY) === "1";
-  if (minimizedByDefault) {
+  if (minimizedByDefault && elements.logPanel && elements.logToggle) {
     elements.logPanel.classList.add("minimized");
     elements.logToggle.textContent = "Open";
   }
+  applyMapViewTransform();
 })();
