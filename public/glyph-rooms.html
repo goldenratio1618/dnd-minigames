@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Glyph Rooms</title>
+    <link rel="icon" type="image/png" href="/minigames%20favicon.png" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-role="player" class="glyph-rooms">
+    <div class="page">
+      <header class="site-header">
+        <div class="title-group">
+          <p class="title-eyebrow">Cavern Puzzles</p>
+          <h1>Glyph Rooms</h1>
+          <p class="subtitle"></p>
+        </div>
+        <div class="header-actions">
+          <button class="reset-button" id="start-game" type="button">START</button>
+          <div class="status" id="status">Connecting...</div>
+        </div>
+      </header>
+
+      <main class="glyph-board">
+        <section class="glyph-strip">
+          <div class="glyph-panel hp-panel">
+            <div class="glyph-panel-title">HP</div>
+            <div id="hp-text" class="glyph-stat-value">-</div>
+            <div class="hp-meter">
+              <div id="hp-meter-fill" class="hp-meter-fill"></div>
+            </div>
+          </div>
+          <div class="glyph-panel">
+            <div class="glyph-panel-title">Equipped</div>
+            <div id="equipped-green" class="equipped-glyph empty">-</div>
+          </div>
+          <div class="glyph-panel blue-panel">
+            <div class="glyph-panel-title">Blue Glyph</div>
+            <button id="blue-glyph" class="blue-glyph-button" type="button">
+              <span class="mana-symbol mana-blue"></span>
+            </button>
+          </div>
+        </section>
+
+        <section class="glyph-room-wrap">
+          <div id="room-glyphs" class="glyph-room"></div>
+        </section>
+      </main>
+
+      <footer class="instructions" id="message-bar"></footer>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/glyph-rooms.js"></script>
+  </body>
+</html>

@@ -19,6 +19,10 @@ npm start
 
 - DM view: `http://<your-ip>:3000/dm.html`
 - Player view: `http://<your-ip>:3000/`
+- Glyph Rooms (player): `http://<your-ip>:3000/glyph-rooms.html`
+- Glyph Rooms (DM): `http://<your-ip>:3000/dm-glyph-rooms.html`
+- Echoing Mines (player): `http://<your-ip>:3000/echoing-mines.html`
+- Echoing Mines (DM): `http://<your-ip>:3000/dm-echoing-mines.html`
 - Tabletop (player): `http://<your-ip>:3000/tabletop.html`
 - Tabletop (DM gateway): `http://<your-ip>:3000/dm-tabletop.html`
 

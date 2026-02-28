@@ -38,6 +38,7 @@
   const loadMapDiskInput = document.getElementById("load-map-disk-input");
   const fogToggleInput = document.getElementById("fog-toggle-input");
   const mapEditorToolsEl = document.getElementById("map-editor-tools");
+  const gameSelectEl = document.getElementById("game-select");
 
   const defaultMessage = messageBar ? messageBar.innerHTML : "";
   const SAVE_KEY = "echoingMinesSavedMaps";
@@ -212,6 +213,29 @@
       return;
     }
     headerVerseEl.innerHTML = DEFAULT_INSCRIPTION_HTML;
+  }
+
+  function updateGameSelector() {
+    if (!isDM || !gameSelectEl) {
+      return;
+    }
+    const routeByGame = {
+      "arcane-cells": "/dm.html",
+      "echoing-mines": "/dm-echoing-mines.html",
+      "glyph-rooms": "/dm-glyph-rooms.html",
+    };
+    const gameByRoute = {
+      "/dm.html": "arcane-cells",
+      "/dm-echoing-mines.html": "echoing-mines",
+      "/dm-glyph-rooms.html": "glyph-rooms",
+    };
+    gameSelectEl.value = gameByRoute[window.location.pathname] || "echoing-mines";
+    gameSelectEl.addEventListener("change", () => {
+      const route = routeByGame[gameSelectEl.value];
+      if (route) {
+        window.location.assign(route);
+      }
+    });
   }
 
   function createArrowIcon(direction) {
@@ -2048,6 +2072,8 @@
       requestRedo();
     });
   }
+
+  updateGameSelector();
 
   const resetGameButton = document.getElementById("reset-game");
   if (resetGameButton) {

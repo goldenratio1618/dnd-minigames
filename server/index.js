@@ -5,6 +5,7 @@ const { Server } = require("socket.io");
 const game = require("./game/arcane-cells");
 const solver = require("./game/arcane-cells-solver");
 const minesGame = require("./game/echoing-mines");
+const glyphRoomsGame = require("./game/glyph-rooms");
 const { createTabletopSystem } = require("./game/tabletop");
 
 const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
@@ -135,6 +136,10 @@ app.get("/dm.html", (req, res) => {
 
 app.get("/dm-echoing-mines.html", (req, res) => {
   serveDmPage(req, res, "dm-echoing-mines.html");
+});
+
+app.get("/dm-glyph-rooms.html", (req, res) => {
+  serveDmPage(req, res, "dm-glyph-rooms.html");
 });
 
 app.get("/dm-tabletop.html", (req, res) => {
@@ -530,6 +535,60 @@ io.on("connection", (socket) => {
     if (changed) {
       broadcastState();
     }
+  });
+});
+
+const glyphRoomsNamespace = io.of("/glyph-rooms");
+let glyphRoomsState = glyphRoomsGame.createGame();
+
+function sendGlyphRoomsState(socket) {
+  socket.emit("state", glyphRoomsGame.serializeState(glyphRoomsState));
+}
+
+function broadcastGlyphRoomsState() {
+  for (const socket of glyphRoomsNamespace.sockets.values()) {
+    sendGlyphRoomsState(socket);
+  }
+}
+
+glyphRoomsNamespace.on("connection", (socket) => {
+  socket.data.role = "player";
+  sendGlyphRoomsState(socket);
+
+  socket.on("register", (payload) => {
+    const requested = payload && payload.role === "dm" ? "dm" : "player";
+    socket.data.role = requested;
+    sendGlyphRoomsState(socket);
+  });
+
+  socket.on("startGame", (payload) => {
+    const result = glyphRoomsGame.startGame(
+      glyphRoomsState,
+      payload && payload.maxHp
+    );
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastGlyphRoomsState();
+  });
+
+  socket.on("clickGlyph", (payload) => {
+    const result = glyphRoomsGame.clickGlyph(glyphRoomsState, payload);
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastGlyphRoomsState();
+  });
+
+  socket.on("useBlueGlyph", () => {
+    const result = glyphRoomsGame.useBlueGlyph(glyphRoomsState);
+    if (!result.ok) {
+      socket.emit("actionError", { message: result.error });
+      return;
+    }
+    broadcastGlyphRoomsState();
   });
 });
 

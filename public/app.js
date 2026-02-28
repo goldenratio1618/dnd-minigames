@@ -19,6 +19,7 @@
   const reassignTrapsButton = document.getElementById("reassign-traps");
   const trapCountInput = document.getElementById("trap-count");
   const seedInput = document.getElementById("seed-input");
+  const gameSelectEl = document.getElementById("game-select");
 
   const defaultMessage = messageBar ? messageBar.innerHTML : "";
 
@@ -694,6 +695,26 @@
         return;
       }
       socket.emit("resetGame");
+    });
+  }
+
+  if (isDM && gameSelectEl) {
+    const routeByGame = {
+      "arcane-cells": "/dm.html",
+      "echoing-mines": "/dm-echoing-mines.html",
+      "glyph-rooms": "/dm-glyph-rooms.html",
+    };
+    const gameByRoute = {
+      "/dm.html": "arcane-cells",
+      "/dm-echoing-mines.html": "echoing-mines",
+      "/dm-glyph-rooms.html": "glyph-rooms",
+    };
+    gameSelectEl.value = gameByRoute[window.location.pathname] || "arcane-cells";
+    gameSelectEl.addEventListener("change", () => {
+      const route = routeByGame[gameSelectEl.value];
+      if (route) {
+        window.location.assign(route);
+      }
     });
   }
 })();
