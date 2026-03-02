@@ -1,6 +1,8 @@
 # dnd-minigames
 Minigames for a DnD campaign
 
+Tabletop has been split into the `gairos` repository.
+
 ## Quick start
 
 1. Install dependencies:
@@ -23,16 +25,8 @@ npm start
 - Glyph Rooms (DM): `http://<your-ip>:3000/dm-glyph-rooms.html`
 - Echoing Mines (player): `http://<your-ip>:3000/echoing-mines.html`
 - Echoing Mines (DM): `http://<your-ip>:3000/dm-echoing-mines.html`
-- Tabletop (player): `http://<your-ip>:3000/tabletop.html`
-- Tabletop (DM gateway): `http://<your-ip>:3000/dm-tabletop.html`
 
 Tip: if you are in WSL, use your Windows host IP (from `ipconfig`) or your WSL IP (`hostname -I`).
-
-## Gairos Tabletop Emulator
-
-- Separate Socket.IO namespace: `/tabletop`
-- Persistent disk state in `generated/tabletop/state.json` (created automatically at runtime)
-- Player/DM accounts, character + statblock persistence, map layers, doors, difficult terrain, initiative tracking, roll logs, and slash-roll parsing (`/r NdX`, `/r NdXk1`, `/r NdXkl1 +/-Y`)
 
 ## Network safety
 
