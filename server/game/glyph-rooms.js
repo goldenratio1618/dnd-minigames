@@ -198,6 +198,9 @@ function useBlueGlyph(state) {
   if (!state.blueActive) {
     return { ok: false, error: "Blue glyph is inactive." };
   }
+  if (state.room.length !== 4) {
+    return { ok: false, error: "Blue glyph can only be used in a full room." };
+  }
 
   if (state.room.length > 0) {
     const shuffledRoom = shuffle(state.room);

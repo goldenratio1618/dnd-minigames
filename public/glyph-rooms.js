@@ -11,11 +11,15 @@
   const equippedGreenEl = document.getElementById("equipped-green");
   const roomEl = document.getElementById("room-glyphs");
   const blueGlyphButton = document.getElementById("blue-glyph");
+  const solveGameButton = document.getElementById("solve-game");
   const gameSelectEl = document.getElementById("game-select");
 
   const defaultMessage = messageBar ? messageBar.innerHTML : "";
   let state = null;
   let messageTimeout = null;
+  let solving = false;
+  let announcedVictory = false;
+  let announcedDefeat = false;
 
   function setStatus(text) {
     if (statusEl) {
@@ -179,7 +183,14 @@
     if (!blueGlyphButton) {
       return;
     }
-    const active = Boolean(state && state.started && state.blueActive && !state.finished);
+    const active = Boolean(
+      state &&
+        state.started &&
+        state.blueActive &&
+        !state.finished &&
+        Array.isArray(state.room) &&
+        state.room.length === 4
+    );
     blueGlyphButton.disabled = !active;
     blueGlyphButton.classList.toggle("inactive", !active);
   }
@@ -189,9 +200,14 @@
     renderEquippedGlyph();
     renderRoom();
     renderBlueGlyph();
-    if (state && state.finished && state.hp <= 0) {
-      setMessage("Run ended.");
+  }
+
+  function updateSolveButton() {
+    if (!isDM || !solveGameButton) {
+      return;
     }
+    solveGameButton.disabled = solving;
+    solveGameButton.textContent = solving ? "Solving..." : "Solve run";
   }
 
   socket.on("connect", () => {
@@ -205,6 +221,36 @@
 
   socket.on("state", (newState) => {
     state = newState;
+    const hasClearedAllGlyphs = Boolean(
+      state &&
+        state.started &&
+        state.deckCount === 0 &&
+        Array.isArray(state.room) &&
+        state.room.length === 0
+    );
+    const hasDefeat = Boolean(
+      state &&
+        state.started &&
+        state.finished &&
+        Number.isInteger(state.hp) &&
+        state.hp <= 0
+    );
+    if (hasClearedAllGlyphs) {
+      if (!announcedVictory) {
+        setMessage("Victory! All glyphs are cleared.");
+      }
+      announcedVictory = true;
+    } else {
+      announcedVictory = false;
+    }
+    if (hasDefeat) {
+      if (!announcedDefeat) {
+        setMessage("Run ended.");
+      }
+      announcedDefeat = true;
+    } else {
+      announcedDefeat = false;
+    }
     render();
   });
 
@@ -212,6 +258,30 @@
     if (payload && payload.message) {
       setMessage(payload.message);
     }
+  });
+
+  socket.on("solverResult", (payload) => {
+    if (!isDM) {
+      return;
+    }
+    solving = false;
+    updateSolveButton();
+    const moves = payload && Number.isInteger(payload.moves) ? payload.moves : null;
+    if (moves !== null) {
+      setMessage(`Solved in ${moves} clicks.`);
+      return;
+    }
+    setMessage("Solver found a full clear.");
+  });
+
+  socket.on("solverError", (payload) => {
+    if (!isDM) {
+      return;
+    }
+    solving = false;
+    updateSolveButton();
+    const message = payload && payload.message ? payload.message : "Solver failed.";
+    setMessage(message);
   });
 
   if (startGameButton) {
@@ -237,5 +307,17 @@
     });
   }
 
+  if (isDM && solveGameButton) {
+    solveGameButton.addEventListener("click", () => {
+      if (solving) {
+        return;
+      }
+      solving = true;
+      updateSolveButton();
+      socket.emit("solveGame");
+    });
+  }
+
   updateGameSelector();
+  updateSolveButton();
 })();

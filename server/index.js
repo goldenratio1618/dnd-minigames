@@ -6,6 +6,7 @@ const game = require("./game/arcane-cells");
 const solver = require("./game/arcane-cells-solver");
 const minesGame = require("./game/echoing-mines");
 const glyphRoomsGame = require("./game/glyph-rooms");
+const glyphRoomsSolver = require("./game/glyph-rooms-solver");
 const { createTabletopSystem } = require("./game/tabletop");
 
 const PORT = Number.parseInt(process.env.PORT, 10) || 3000;
@@ -585,10 +586,39 @@ glyphRoomsNamespace.on("connection", (socket) => {
   socket.on("useBlueGlyph", () => {
     const result = glyphRoomsGame.useBlueGlyph(glyphRoomsState);
     if (!result.ok) {
+      if (
+        socket.data.role !== "dm" &&
+        result.error === "Blue glyph can only be used in a full room."
+      ) {
+        return;
+      }
       socket.emit("actionError", { message: result.error });
       return;
     }
     broadcastGlyphRoomsState();
+  });
+
+  socket.on("solveGame", () => {
+    if (socket.data.role !== "dm") {
+      return;
+    }
+    const snapshot = cloneState(glyphRoomsState);
+    const result = glyphRoomsSolver.solveGlyphRooms(snapshot, {
+      allowBlueGlyph: true,
+    });
+    if (!result.ok) {
+      socket.emit("solverError", {
+        message: result.error,
+        nodes: result.nodes,
+        elapsedMs: result.elapsedMs,
+      });
+      return;
+    }
+    socket.emit("solverResult", {
+      moves: result.moves.length,
+      nodes: result.nodes,
+      elapsedMs: result.elapsedMs,
+    });
   });
 });
 
